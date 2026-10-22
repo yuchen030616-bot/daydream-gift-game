@@ -4,14 +4,18 @@
  const relays=['wss://broker.emqx.io:8084/mqtt','wss://broker.hivemq.com:8884/mqtt','wss://public.cloud.shiftr.io'];
  const isAlias=s=>/^\d{4}$/.test(String(s||''));
  const topic=alias=>'daydream/lobby/v1/'+alias;
+ const validNonce=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{22}$/.test(value);
+ const mono=()=>performance.now();
+ function pingNonce(raw){try{if(typeof raw!=='string'||raw.length>100)return null;const value=JSON.parse(raw);return validNonce(value?.nonce)?value.nonce:null;}catch{return null;}}
  const randomAlias=()=>{let n;do{n=crypto.getRandomValues(new Uint32Array(1))[0];}while(n>=4294960000);return String(n%10000).padStart(4,'0');};
- async function record(raw,alias){
+ async function record(raw,alias,expectedNonce){
   try{
    if(typeof raw!=='string'||raw.length>4000)return null;
    const p=JSON.parse(raw),d=JSON.parse(p.data),now=Date.now();
-   if(d.kind!=='daydream-room-alias-v1'||d.alias!==alias||!isAlias(d.alias)||!RoomCore.valid(d.code)||!Number.isFinite(d.at)||!Number.isFinite(d.expires)||d.at>now+5000||d.expires<=now||d.expires>d.at+30000)return null;
+   if(d.kind!=='daydream-room-alias-v1'||d.alias!==alias||!isAlias(d.alias)||!RoomCore.valid(d.code)||!Number.isFinite(d.at)||!Number.isFinite(d.expires)||d.expires<=d.at||d.expires-d.at>30000)return null;
    if(!await RoomCore.verify(p,p.pub,d.code))return null;
-   return {alias:d.alias,code:d.code,pub:p.pub,at:d.at,expires:d.expires};
+   if(!(validNonce(expectedNonce)&&d.request===expectedNonce)&&(d.at>now+5000||d.expires<=now))return null;
+   return {alias:d.alias,code:d.code,pub:p.pub,at:d.at,expires:d.expires,...(validNonce(d.request)?{request:d.request}:{})};
   }catch{return null;}
  }
  function channel(){
@@ -49,29 +53,31 @@
  async function connected(ch){let timer;try{await Promise.race([ch.ready,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('房间码通道暂未连接，请稍后重试。')),10000);})]);}finally{clearTimeout(timer);}}
  async function resolve(alias){
   if(!isAlias(alias))throw Error('请输入4位数字房间码');
-  const ch=channel();let finish,timer,collect;const records=new Map();
+  const ch=channel();let finish,timer,collect,retry,request=null,requestedAt=Infinity;const records=new Map();
   try{
    await connected(ch);
    const found=new Promise(yes=>{finish=yes;});
-   await ch.listen(alias,async(raw,ping)=>{if(ping)return;const d=await record(raw,alias);if(!d)return;records.set(d.code,d);if(!collect)collect=setTimeout(()=>finish([...records.values()].sort((a,b)=>a.code.localeCompare(b.code))[0]),350);});
+   await ch.listen(alias,async(raw,ping)=>{if(ping)return;const expected=mono()-requestedAt<6000?request:null;const d=await record(raw,alias,expected);if(!d||d.request===request&&mono()-requestedAt>=6000)return;records.set(d.code,d);if(!collect)collect=setTimeout(()=>finish([...records.values()].sort((a,b)=>a.code.localeCompare(b.code))[0]),350);});
+   request=RoomCore.nonce();requestedAt=mono();
    const timeout=new Promise((_,no)=>{timer=setTimeout(()=>no(Error('没有找到在线房间，请核对4位数字，并让房主保持页面打开。')),6000);});
-   ch.send(alias,'?',false,true);return await Promise.race([found,timeout]);
-  }finally{clearTimeout(timer);clearTimeout(collect);ch.close();}
+   const probe=()=>ch.send(alias,JSON.stringify({nonce:request}),false,true);probe();retry=setInterval(probe,750);return await Promise.race([found,timeout]);
+  }finally{clearTimeout(timer);clearTimeout(collect);clearInterval(retry);ch.close();}
  }
  async function claim(identity,onAlias){
-  const ch=channel();let alias='',closed=false,allocating=false,heartbeat,lastPing=0;
-  const announce=async()=>{if(closed||!alias||allocating)return;const at=Date.now(),data={kind:'daydream-room-alias-v1',alias,code:identity.code,at,expires:at+30000};const p=await RoomCore.sign(data,identity.privateKey);if(!closed)ch.send(data.alias,JSON.stringify({...p,pub:identity.pub}),true);};
+  const ch=channel();let alias='',closed=false,allocating=false,heartbeat,lastPing=-Infinity;
+  const announce=async request=>{if(closed||!alias||allocating)return;const at=Date.now(),data={kind:'daydream-room-alias-v1',alias,code:identity.code,at,expires:at+30000,...(validNonce(request)?{request}:{})};const p=await RoomCore.sign(data,identity.privateKey);if(!closed)ch.send(data.alias,JSON.stringify({...p,pub:identity.pub}),!validNonce(request));};
   async function allocate(preferred){
    if(closed||allocating)return;allocating=true;
    try{
     if(alias)ch.unlisten(alias);
     for(let attempt=0;attempt<30&&!closed;attempt++){
-     const candidate=attempt===0&&isAlias(preferred)?preferred:randomAlias();let occupied=false;
-     await ch.listen(candidate,async(raw,ping)=>{if(ping){if(candidate===alias&&Date.now()-lastPing>500){lastPing=Date.now();announce().catch(()=>{});}return;}const d=await record(raw,candidate);if(!d||d.code===identity.code)return;occupied=true;
+     const candidate=attempt===0&&isAlias(preferred)?preferred:randomAlias();let occupied=false,request=null,requestedAt=Infinity,probing=false;
+     await ch.listen(candidate,async(raw,ping)=>{if(ping){const nonce=pingNonce(raw);if((raw==='?'||nonce)&&candidate===alias&&mono()-lastPing>500){lastPing=mono();announce(nonce).catch(()=>{});}return;}const expected=probing&&mono()-requestedAt<1500?request:null;const d=await record(raw,candidate,expected);if(!d||d.code===identity.code||expected&&d.request===expected&&(!probing||mono()-requestedAt>=1500))return;occupied=true;
       // Simultaneous claims converge; the losing host receives a new alias.
       if(!allocating&&candidate===alias){if(d.code.localeCompare(identity.code)<0)allocate().catch(()=>{closed=true;clearInterval(heartbeat);ch.close();});else announce().catch(()=>{});}
      });
-     ch.send(candidate,'?',false,true);await delay(1500);
+     request=RoomCore.nonce();requestedAt=mono();probing=true;
+     const probe=()=>ch.send(candidate,JSON.stringify({nonce:request}),false,true);probe();const retry=setInterval(probe,750);try{await delay(1500);}finally{probing=false;clearInterval(retry);}
      if(closed){ch.unlisten(candidate);return;}
      if(occupied){ch.unlisten(candidate);continue;}
      alias=candidate;allocating=false;onAlias(alias);await announce();return;

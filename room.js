@@ -8,6 +8,12 @@
   const room={role:'solo',code:'',clients:[],peers:new Map(),rev:0,lastAt:0,lastHost:0,playerId:null,playerSeen:0,pending:null,acks:[],seen:new Set(),id:C.id(),ready:false,working:false,closed:false};
   let adapter,timer,receiveChain=Promise.resolve(),sendChain=Promise.resolve(),heartbeatAt=0,owner=null,cipher,lastBroadcastAt=0,renderKey='';
   const storageKey=code=>'daydream.owner.'+code;
+  const monotonic=()=>typeof performance!=='undefined'?performance.now():Date.now();
+  const validNonce=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{22}$/.test(value);
+  Object.assign(room,{hostOffset:0,clockSynced:false,syncNonce:'',syncIssued:0,syncProof:'',challenges:new Map(),receivedStates:0,applyErrors:0});
+  const hostNow=()=>room.clockSynced?room.hostEpoch+(monotonic()-room.hostEpochMono):Date.now();
+  const hostFresh=()=>room.lastHost>0&&monotonic()-room.lastHostMono<24000;
+  function ensureSync(){if(!room.syncNonce||!room.clockSynced&&monotonic()-room.syncIssued>10000){room.syncNonce=C.nonce();room.syncIssued=monotonic();room.syncProof='';}}
   const isAlias=value=>typeof value==='string'&&/^[0-9]{4}$/.test(value);
   let directoryHandle=null,directoryEpoch=0,joining=false,startTicket=0;
   function closeDirectory(){directoryEpoch++;directoryHandle?.close();directoryHandle=null;}
@@ -34,11 +40,14 @@
   room.members=[];
   let nameDialog,nameInput,nameError,nameResolve;
   function diagnostics(){
-    return ['版本：20261023-connect','角色：'+room.role,'房间信息：'+(!!room.code),'操作链接：'+(!!room.token),
+    return ['版本：20261023-clock','角色：'+room.role,'房间信息：'+(!!room.code),'操作链接：'+(!!room.token),
       '安全加密：'+(!!globalThis.crypto?.subtle),'WebSocket：'+(typeof WebSocket!=='undefined'),
       ...relays.map((url,i)=>{const c=room.clients[i];return (url.includes('shiftr.io')?'兼容线路（443）':'线路'+(i+1))+'：'+(!c?'未启用':c.roomSubscribed?'已连接，可收发':c.connected?(c.roomError?'已连接，订阅重试中':'已连接，等待订阅'):c.roomError?'连接失败，正在重试':'正在连接');}),
-      '房主同步：'+(room.role==='host'?'本机房主':room.lastHost?'最近 '+Math.max(0,Math.round((Date.now()-room.lastHost)/1000))+' 秒前':'尚未收到'),
-      ...(room.expiredStates?['收到超时状态：'+room.expiredStates+' 次，请检查双方设备时间及房主是否在线']:[])].join('\n');
+      '房主同步：'+(room.role==='host'?'本机房主':room.lastHost?'最近 '+Math.max(0,Math.round((monotonic()-room.lastHostMono)/1000))+' 秒前':'尚未收到'),
+      '收到房主状态：'+room.receivedStates+' 次',
+      ...(room.clockSynced?['自动校时：完成（设备相差约 '+Math.round(room.hostOffset/1000)+' 秒）']:[]),
+      ...(room.applyErrors?['状态加载失败：'+room.applyErrors+' 次，正在重试']:[]),
+      ...(room.expiredStates?['收到超时状态：'+room.expiredStates+' 次'+(room.clockSynced?'，已启用自动校时':'，正在与房主握手校时')]:[])].join('\n');
   }
   function nameUI(){
     if(!document.createElement)return;
@@ -78,8 +87,8 @@
   }
   function roster(){return [{name:room.name||'匿名',role:'host'},...Array.from(room.peers,([id,p])=>({name:p.name||'匿名',role:id===room.playerId?'player':'watch'}))];}
   function note(s){$('roomNotice').textContent=s;}
-  function linked(role){const u=new URL('index.html',location.href);u.search='?v=20261023-connect';u.hash=new URLSearchParams({room:room.code,...(isAlias(room.alias)?{code:room.alias}:{}),...(role==='player'?{play:owner.token}:{view:'1'})}).toString();return u.href;}
-  function canPlay(){return room.role==='solo'||room.role==='player'&&room.ready&&Date.now()-room.lastHost<24000&&room.playerId===room.id&&!room.pending;}
+  function linked(role){const u=new URL('index.html',location.href);u.search='?v=20261023-clock';u.hash=new URLSearchParams({room:room.code,...(isAlias(room.alias)?{code:room.alias}:{}),...(role==='player'?{play:owner.token}:{view:'1'})}).toString();return u.href;}
+  function canPlay(){return room.role==='solo'||room.role==='player'&&room.ready&&hostFresh()&&room.playerId===room.id&&!room.pending;}
   function update(){
     document.body.dataset.roomRole=room.role;
     const active=room.role!=='solo',host=room.role==='host';
@@ -90,7 +99,7 @@
     $('leaveRoom').hidden=!active;$('reconnectRoom').hidden=!active;
     $('roomLinkArea').hidden=!host;$('watchLinkArea').hidden=!host;
     $('roomCode').textContent=active?(isAlias(room.alias)?room.alias:host?'生成中…':'等待4位房间码…'):'';
-    const online=room.clients.some(c=>c.connected&&c.roomSubscribed),fresh=Date.now()-room.lastHost<24000;
+    const online=room.clients.some(c=>c.connected&&c.roomSubscribed),fresh=hostFresh();
     $('roomStatus').textContent=!active?'单人模式':host?(online?'房主 · 等待 / 同步中':'房主 · 正在连接'):!online?'网络连接中…':!fresh?'等待房主上线…':room.role==='player'?(room.playerId===room.id?'主播 · 实时同步':room.playerId?'操作席已被使用':'正在加入操作席…'):'围观 · 实时同步';
     $('roomCount').textContent=!active?'':host||room.ready&&fresh?'在线 '+(room.count||1)+' 人（含房主）':'在线人数待同步';
     $('roomIntro').textContent=!active?'创建房间，把主播操作链接发给主播；其他人输入4位数字房间码即可同步围观。':host?'你正在房主观看席。把下方主播链接发给一位主播，4位数字房间码可以发给多人围观。':room.role==='player'?'这是主播操作席。你的选箱、开箱和决定会同步给房主及所有围观者。':'你正在围观，开箱、熊二报价和最终结果会实时同步。';
@@ -101,34 +110,58 @@
   function save(){if(room.role!=='host')return;owner.saved=adapter.save();owner.rev=room.rev;owner.expires=Date.now()+86400000;if(!store.set(storageKey(room.code),owner))note('当前浏览器无法保存房间，关闭房主页面后无法恢复本局。');}
   function publish(packet,retain=false){sendChain=sendChain.then(async()=>{if(room.closed)return;const raw=await cipher.seal(packet);for(const client of room.clients)if(client.connected)client.publish(room.topic,raw,{qos:0,retain});}).catch(()=>note('本次同步未发出，正在重试连接。'));return sendChain;}
   function broadcast(){if(room.role!=='host'||room.closed)return;const now=Date.now();for(const[id,p]of room.peers)if(now-p.at>24000)room.peers.delete(id);if(room.playerId&&now-room.playerSeen>24000)room.playerId=null;room.count=1+room.peers.size;room.lastHost=now;
-    lastBroadcastAt=Math.max(now,lastBroadcastAt+1);const data={code:room.code,alias:isAlias(room.alias)?room.alias:null,at:lastBroadcastAt,rev:room.rev,state:adapter.publicState(),playerId:room.playerId,count:room.count,acks:room.acks,members:roster()};
+    for(const[id,c]of room.challenges)if(monotonic()-c.issued>30000)room.challenges.delete(id);
+    const syncReplies=Array.from(room.challenges,([peer,c])=>({peer,nonce:c.nonce,challenge:c.challenge}));
+    lastBroadcastAt=Math.max(now,lastBroadcastAt+1);const data={code:room.code,alias:isAlias(room.alias)?room.alias:null,at:lastBroadcastAt,rev:room.rev,state:adapter.publicState(),playerId:room.playerId,count:room.count,acks:room.acks,members:roster(),syncReplies};
     return C.sign(data,owner.privateKey).then(signed=>publish({type:'state',pub:owner.pub,...signed},true));
   }
-  async function hello(){if(room.role==='solo'||!cipher)return;if(room.role==='host')return broadcast();const data={type:'presence',id:room.id,at:Date.now(),role:room.role,name:room.name||'匿名'};return publish({data,auth:room.token?await C.mac(data,room.token):null});}
+  async function hello(){if(room.role==='solo'||!cipher)return;if(room.role==='host')return broadcast();ensureSync();const data={type:'presence',id:room.id,at:hostNow(),role:room.role,name:room.name||'匿名',sync:room.syncNonce,...(room.syncProof?{proof:room.syncProof}:{})};return publish({data,auth:room.token?await C.mac(data,room.token):null});}
   async function receive(raw){
     const p=await cipher.open(raw),now=Date.now();
     if(p.type==='state'){
       if(room.role==='host')return;
       const d=await C.verify(p,p.pub,room.code);if(!d||d.code!==room.code)return;
-      if(Math.abs(now-d.at)>24000){room.expiredStates=(room.expiredStates||0)+1;update();return;}
-      if(!Number.isInteger(d.rev)||d.rev<room.rev||d.at<=room.lastAt)return;
-      const changed=!room.ready||room.rev!==d.rev;room.rev=d.rev;room.lastAt=d.at;room.lastHost=now;room.playerId=d.playerId;room.count=d.count;room.ready=true;
+      if(!Number.isFinite(d.at)||!Number.isInteger(d.rev)||d.rev<room.rev||d.at<=room.lastAt)return;
+      room.receivedStates++;
+      const reply=Array.isArray(d.syncReplies)&&d.syncReplies.slice(0,100).find(c=>c.peer===room.id&&c.nonce===room.syncNonce&&validNonce(c.challenge));
+      if(!room.clockSynced&&reply&&room.syncNonce&&monotonic()-room.syncIssued<=10000){room.hostOffset=d.at-now;room.hostEpoch=d.at;room.hostEpochMono=monotonic();room.clockSynced=true;}
+      if(Math.abs(hostNow()-d.at)>24000){room.expiredStates=(room.expiredStates||0)+1;if(room.clockSynced){room.clockSynced=false;room.syncNonce='';}hello();update();return;}
+      const changed=!room.ready||room.rev!==d.rev;
+      // Retry this revision after a rendering error; never mark unapplied state ready.
+      if(changed){try{adapter.loadPublic(d.state);}catch{room.applyErrors++;update();return;}}
+      room.rev=d.rev;room.lastAt=d.at;room.lastHost=now;room.lastHostMono=monotonic();room.playerId=d.playerId;room.count=d.count;room.ready=true;
       if(isAlias(d.alias))room.alias=d.alias;
       room.members=Array.isArray(d.members)?d.members.slice(0,200).map(p=>({name:validName(p?.name)||'匿名',role:p?.role==='host'?'host':p?.role==='player'?'player':'watch'})):[{name:'匿名',role:'host'}];
       if(room.pending&&d.acks?.includes(room.pending.data.id)){room.pending=null;note('已同步。');}
-      if(changed)adapter.loadPublic(d.state);update();return;
+      const proofChanged=reply&&room.syncProof!==reply.challenge;if(proofChanged)room.syncProof=reply.challenge;
+      update();if(proofChanged)hello();return;
     }
-    if(room.role!=='host'||!p.data||Math.abs(now-p.data.at)>24000)return;
+    if(room.role!=='host'||!p.data)return;
     const d=p.data;if(typeof d.id!=='string'||d.id.length>40)return;
+    const fresh=Number.isFinite(d.at)&&Math.abs(now-d.at)<=24000;
     if(d.type==='presence'){
+      const sync=validNonce(d.sync);if(d.sync!==undefined&&!sync)return;if(!fresh&&!sync)return;
+      const playerAuth=d.role==='player'&&await C.checkMac(d,p.auth,owner.token);
+      if(d.role==='player'&&!playerAuth)return;
       // An unauthenticated spectator cannot rename the active streamer's identity.
-      if(d.id===room.playerId&&!await C.checkMac(d,p.auth,owner.token))return;
+      if(d.id===room.playerId&&!playerAuth)return;
+      let challenge=room.challenges.get(d.id),newChallenge=false;
+      if(sync&&(!challenge||challenge.nonce!==d.sync||monotonic()-challenge.issued>30000)){
+        if(challenge&&monotonic()-challenge.issued<1000)return;
+        if(room.challenges.size>=100)room.challenges.delete(room.challenges.keys().next().value);
+        challenge={nonce:d.sync,challenge:C.nonce(),issued:monotonic(),confirmed:false};room.challenges.set(d.id,challenge);newChallenge=true;
+      }
+      const proof=sync&&challenge?.nonce===d.sync&&monotonic()-challenge.issued<=30000&&(challenge.confirmed||d.proof===challenge.challenge);
+      // A time-skewed initial packet may request an echo, but cannot renew a seat.
+      if(!fresh||sync&&!proof){if(newChallenge)await broadcast();return;}
+      if(sync)challenge.confirmed=true;
       const previous=room.peers.get(d.id),name=validName(d.name)||'匿名';room.peers.set(d.id,{at:now,name});
-      if(d.role==='player'&&await C.checkMac(d,p.auth,owner.token)&&(!room.playerId||room.playerId===d.id||now-room.playerSeen>24000)){room.playerId=d.id;room.playerSeen=now;}
+      if(playerAuth&&(!room.playerId||room.playerId===d.id||now-room.playerSeen>24000)){room.playerId=d.id;room.playerSeen=now;}
       // Reply immediately on first arrival; heartbeat handles established peers.
       if(!room.knownPeers?.has(d.id)||previous?.name!==name){room.knownPeers??=new Set();room.knownPeers.add(d.id);await broadcast();update();}
       return;
     }
+    if(!fresh)return;
     if(d.type!=='action'||!await C.checkMac(d,p.auth,owner.token))return;
     if(room.seen.has(d.id)){await broadcast();return;}
     room.seen.add(d.id);if(room.seen.size>256)room.seen.delete(room.seen.values().next().value);
@@ -191,7 +224,7 @@
   window.DreamRoom={
     get role(){return room.role},canPlay,
     request(action,index){if(room.role==='solo')return false;if(room.role==='host'){if(action==='reset'){adapter.reset();room.rev++;save();broadcast();}return true;}if(!canPlay())return true;
-      const data={type:'action',id:C.id(),peer:room.id,at:Date.now(),rev:room.rev,action,index};room.pending={data,sent:Date.now()};update();C.mac(data,room.token).then(auth=>publish({data,auth}));note('操作已发送，等待房主确认…');return true;},
+      const data={type:'action',id:C.id(),peer:room.id,at:hostNow(),rev:room.rev,action,index};room.pending={data,sent:Date.now()};update();C.mac(data,room.token).then(auth=>publish({data,auth}));note('操作已发送，等待房主确认…');return true;},
     changed(){if(room.role==='host'){room.rev++;save();broadcast();}},
     init(a){adapter=a;
       nameUI();
@@ -199,7 +232,7 @@
       $('joinRoom').onclick=async()=>{if(joining)return;const alias=$('joinCode').value.trim();if(!isAlias(alias)){note('请输入4位数字房间码，例如 1234。');return;}if(!await ensureName()){note('填写昵称后才能进入房间。');return;}if(joining)return;const ticket=++startTicket;joining=true;$('joinRoom').disabled=true;$('createRoom').disabled=true;try{note('正在查找房间…');const code=await resolveAlias(alias);if(ticket===startTicket)await enter(code);}catch(e){if(ticket===startTicket)note(e.message||'查找房间失败，请稍后再试。');}finally{joining=false;$('joinRoom').disabled=false;$('createRoom').disabled=false;}};
       $('joinCode').onkeydown=e=>{if(e.key==='Enter')$('joinRoom').click()};
       $('copyPlayer').onclick=()=>copy($('roomLink'));$('copyWatch').onclick=()=>copy($('watchLink'));
-      $('leaveRoom').onclick=()=>{if(confirm('离开房间？房主离开后，其他人将暂停同步。')){closeDirectory();if(room.role==='host')store.set('daydream.lease.'+room.code,null);location.href=location.pathname+'?v=20261023-connect';}};
+      $('leaveRoom').onclick=()=>{if(confirm('离开房间？房主离开后，其他人将暂停同步。')){closeDirectory();if(room.role==='host')store.set('daydream.lease.'+room.code,null);location.href=location.pathname+'?v=20261023-clock';}};
       $('reconnectRoom').onclick=()=>location.reload();
       window.addEventListener('pagehide',()=>{startTicket++;closeDirectory();if(room.role==='host')store.set('daydream.lease.'+room.code,null);room.clients.forEach(c=>c.end(true));});
       document.addEventListener('visibilitychange',()=>{if(!document.hidden)hello();});
