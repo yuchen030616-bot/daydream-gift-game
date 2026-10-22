@@ -5,10 +5,11 @@
  const player=()=>window.DreamRoom?.role==='player';
  function show(){if(!player()||current?.started!==false||dismissed||document.querySelector('dialog[open]'))return;$('playerStartDialog').showModal();}
  function render(game){
+  const justStarted=player()&&current?.started===false&&game.started===true;
   if(game.gameId?game.gameId!==current?.gameId:game!==current)dismissed=false;
   current=game;const waiting=player()&&game.phase==='select'&&game.started===false;
   $('readyPlayer').hidden=!waiting;
-  if(!waiting){dismissed=false;if($('playerStartDialog').open)$('playerStartDialog').close();return;}
+  if(!waiting){dismissed=false;if($('playerStartDialog').open)$('playerStartDialog').close();if(justStarted)document.querySelector('.stage')?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});return;}
   const ready=DreamRoom.canPlay();$('beginPlayer').disabled=!ready;
   $('startNickname').textContent=($('roomMyName')?.textContent||'').replace(/^我的昵称：/,'')+'，轮到你追梦啦！';
   $('startConnection').textContent=ready?'开始后先选一只保留箱，接下来由你决定收下报价还是继续。':'正在等待房主同步，连接就绪后即可开始。';
