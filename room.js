@@ -20,7 +20,7 @@
     $('roomCode').textContent=active?C.format(room.code):'';
     const online=room.clients.some(c=>c.connected),fresh=Date.now()-room.lastHost<24000;
     $('roomStatus').textContent=!active?'单人模式':host?(online?'房主 · 等待 / 同步中':'房主 · 正在连接'):!online?'网络连接中…':!fresh?'等待房主上线…':room.role==='player'?(room.playerId===room.id?'主播 · 实时同步':room.playerId?'操作席已被使用':'正在加入操作席…'):'围观 · 实时同步';
-    $('roomCount').textContent=active?'在线 '+(room.count||1)+' 人（含房主）':'';
+    $('roomCount').textContent=!active?'':host||room.ready&&fresh?'在线 '+(room.count||1)+' 人（含房主）':'在线人数待同步';
     $('roomIntro').textContent=!active?'创建房间，把主播操作链接发给主播；其他人输入房间码即可同步围观。':host?'你正在房主观看席。把下方主播链接发给一位主播，房间码可以发给多人围观。':room.role==='player'?'这是主播操作席。你的选箱、开箱和决定会同步给房主及所有围观者。':'你正在围观，开箱、熊二报价和最终结果会实时同步。';
     if(host){$('roomLink').value=linked('player');$('watchLink').value=linked('watch');}
     if(active&&Date.now()-room.started>25000&&(!online||!host&&!fresh))note('暂未连上房间。请确认房主保持页面打开，再点“重新连接”；公共联机通道受网络影响，当前进度不会显示为已同步。');
