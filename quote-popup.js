@@ -8,7 +8,7 @@
   function restoreDesk(){const desk=$('ownerDesk'),container=$('quotePrivate');if(desk&&desk.parentNode===container)document.querySelector('.game-layout').before(desk);}
   function close(){if($('quoteDialog').open)$('quoteDialog').close();restoreDesk();}
   function dismiss(){dismissed=true;close();}
-  function allowed(){return current?.phase==='offer'&&canDecide()&&!deciding;}
+  function allowed(){return current?.phase==='offer'&&current.counterProposal?.status!=='pending'&&canDecide()&&!deciding;}
   function decide(action){if(!allowed())return;deciding=true;$('popupAccept').disabled=true;$('popupContinue').disabled=true;$('quotePending').textContent='正在同步你的决定…';api.decision(action);}
   function render(game,line=''){
     if(!api)return;current=game;currentLine=line;
@@ -32,8 +32,11 @@
     $('quotePending').textContent=privateMode?'均价与四档候选仅房主可见，点一档即可发出。':!['solo','player'].includes(role())?'等待主播接受，或继续追梦。':canDecide()?'接受即终止本局；继续则放弃本轮报价。':'等待房主同步，连接恢复后即可决定。';
     if(drink)$('quotePending').textContent=privateMode?'小口数仅作游戏标记，请尊重玩家意愿；可随时跳过或用水替代。':!['solo','player'].includes(role())?'等待玩家自愿决定；也可跳过或用水替代。':canDecide()?'成年人自愿参与；可随时跳过，或用水等无酒精饮品替代。':'等待房主同步；无需饮用，可随时跳过。';
     else if(money)$('quotePending').textContent=privateMode?'均价与四档候选仅房主可见，金额仅作娱乐模拟。':!['solo','player'].includes(role())?'等待玩家接受金额，或继续开箱。':canDecide()?'接受即结束本局；继续则放弃本轮金额。仅作娱乐模拟。':'等待房主同步，连接恢复后即可决定。';
+    if(game.counterProposal?.status==='pending')$('quotePending').textContent=role()==='host'?'玩家提出了组合要求，请查看并决定；原报价暂时保留。':'组合要求正在等待回复，可撤回后继续考虑原报价。';
+    else if(game.counterProposal?.status==='accepted')$('quotePending').textContent='组合要求已被接受，这是一份新报价；仍需玩家确认成交。';
+    else if(game.counterProposal?.status==='declined'&&game.phase==='offer')$('quotePending').textContent='熊二没有同意这份要求，原报价仍然有效；可接受或继续开箱。';
     if(publicMode){$('quoteBearLine').textContent=drink?'这是一份自愿提案，按自己的意愿选择就好；可以继续开箱，也可以跳过或用水替代。':line;$('quotePopupGift').innerHTML=api.art(game.offer)+`<strong>${game.offer.name}</strong>`;$('quoteAudience').textContent='第 '+(DreamEngine.QUOTE_ROUNDS.indexOf(game.round)+1)+' 次报价 · 已开 '+game.round+' 箱';}
-    if(dismissed||$('modal').open||$('adminDialog')?.open){close();return;}
+    if(dismissed||$('modal').open||$('adminDialog')?.open||$('counterofferDialog')?.open){close();return;}
     if(privateMode)$('quotePrivate').appendChild($('ownerDesk'));else restoreDesk();
     if(!$('quoteDialog').open)$('quoteDialog').showModal();
     else if(changed)$('closeQuote').focus();

@@ -27,7 +27,7 @@ const riskQuips=[`嘿嘿，万一最后就剩「${smallest.name}」呢？俺这�
 if($('bearLine'))$('bearLine').textContent=p==='offer'?(game.offer.reason==='低奖风险'?riskQuips[(game.round-1)%riskQuips.length]:quips[(game.round-1)%quips.length]).replace('{gift}',game.offer.name):p==='ended'?`嘿嘿，成交「${game.result.name}」！俺这买卖做得……咳，祝你开心！`:p==='pricing'?'嘿嘿，等俺掰掰爪子，下一口价马上来！':p==='final'?'嘿嘿，最后两箱啦！守住老朋友，还是换个新梦想？选好可就开啦～':p==='open'?`这轮还要开 ${DreamEngine.QUOTE_ROUNDS.find(n=>n>game.round)-game.round} 箱，开完俺再报！`:'嘿嘿，先挑个箱子吧！俺这算盘，今天可不一定向着你哦。';
 $('offerNote').textContent=p==='ended'?'本局最终礼物':p==='offer'?(game.offer.issuer==='host'?'房主已出价 · 是否终止？':'本轮模拟估值 · 是否终止？'):p==='pricing'?'房主确认后，报价会同步给所有人':p==='final'?'最后一次选择：保留原箱或换箱，立即揭晓结果':'按2→2→2→1开箱报价，最后可保留或换箱';
 $('accept').hidden=p!=='offer';$('continue').hidden=p!=='offer';$('reveal').hidden=!['final','ended'].includes(p);$('reveal').textContent=p==='final'?'打开我的梦想箱 ✦':'看看原箱藏着什么';$('history').innerHTML=log.length?log.map(x=>`<li>${x}</li>`).join(''):'<li>梦想档案将在开箱后记录</li>';
-if(!playable||busy||shuffling()){document.querySelectorAll('[data-box]').forEach(b=>b.disabled=true);['accept','continue','reveal','swap'].forEach(id=>$(id).disabled=true);}else ['accept','continue','reveal','swap'].forEach(id=>$(id).disabled=false);
+if(!playable||busy||shuffling()||game.counterProposal?.status==='pending'){document.querySelectorAll('[data-box]').forEach(b=>b.disabled=true);['accept','continue','reveal','swap'].forEach(id=>$(id).disabled=true);}else ['accept','continue','reveal','swap'].forEach(id=>$(id).disabled=false);
 $('reset').disabled=busy||shuffling()||!!window.DreamRoom&&!['host','solo'].includes(DreamRoom.role);
 const shownReserve=game.finalChoice?game.result:game.original;if(shownReserve)$('myBox').innerHTML=`${art(shownReserve)}<strong>${shownReserve.name}</strong><span>${game.selected+1}号梦盒 · ${game.finalChoice==='swap'?'已换箱':game.finalChoice==='keep'?'保留原箱':'原箱已揭晓'}</span>`;
 $('swap').hidden=p!=='final';const other=game.boxes.findIndex((_,i)=>i!==game.selected&&!game.opened.includes(i));$('swap').textContent=other>=0?`换成 ${other+1} 号箱 · 立即开箱`:'换成另一箱';if(p==='final'){$('reveal').textContent=`保留 ${game.selected+1} 号箱 · 立即开箱`;$('hint').textContent=`原箱是 ${game.selected+1} 号，另一箱是 ${other+1} 号。选择后立即揭晓，不能再换。`;}
@@ -37,6 +37,7 @@ window.GameModes?.decorate(game);
 if($('startSolo')){$('startSolo').hidden=!!window.DreamRoom&&DreamRoom.role!=='solo'||p!=='select'||game.selected!==null;$('startSolo').disabled=busy||shuffling();}
 window.OwnerDesk?.render(game);
 window.QuotePopup?.render(game,$('bearLine').textContent);
+window.CounterOffer?.render(game);
 window.Showtime?.render(game);
 window.PlayerStart?.render(game);
 window.AdminDesk?.render(game);
@@ -95,6 +96,14 @@ async function act(action,index){
  if(action==='start')await startAnimation();
  else if(action==='shuffle'){if(window.DreamRoom&&DreamRoom.role!=='solo')throw Error('当前不能操作');await startAnimation(false);}
  else if(action==='banter')publishBanter('player',index);
+ else if(action==='counter'){
+  const p=game.submitCounter(index),gid=game.gameId;render();
+  if(!window.DreamRoom||DreamRoom.role==='solo'){
+   await new Promise(resolve=>setTimeout(resolve,750));
+   if(game.gameId===gid&&game.counterProposal?.id===p.id&&game.counterProposal.status==='pending'){game.resolveCounterAuto(p.id);offerStarted=Date.now();render();}
+  }
+ }
+ else if(action==='withdrawCounter'){if(typeof index!=='string')throw Error('无效的要求');game.withdrawCounter(index);render();}
  else if(action==='applyConfig'){
   if(!index||game.mode==='gift'||index.mode!==game.mode||game.phase!=='select'||game.selected!==null||window.DreamRoom?.role==='host'&&game.started!==false)throw Error('只能在开始前修改本版数值');
   game.configure(index);log=[];offerStarted=0;render();
@@ -121,7 +130,7 @@ function reset(){const config=game.mode!=='gift'?game.config:null;game=new Dream
 $('rules').onclick=()=>{if(game.mode!=='gift'){show('爱做梦的熊二 · '+(game.mode==='drink'?'轻饮玩法':'金额玩法'),'<ol><li>设置范围，自动生成九个数，逐项修改后点击确认使用。</li><li>开始并看完洗牌，再保留一只箱子。</li><li>按2→2→2→1开其他箱，每轮决定接受报价或继续。</li><li>最后两箱可保留或换箱，选择后立即结算。</li></ol><p>'+(game.mode==='drink'?'仅限成年人自愿参与，小口数为游戏标记。可随时跳过、不喝，或用水等无酒精饮品替代，不限时、不劝酒。':'金额用于娱乐模拟，不触发转账或支付。')+'</p><p>房间由房主选择版本，玩家可在开始前修改本版数值；房主保持页面打开以同步游戏。</p>');return;}show('梦想家入场指南','<ol><li>先选一个编号箱，作为你的梦想箱。</li><li>逐个打开其他箱子，开出的礼物将被排除。</li><li>按2、2、2、1个箱子分四轮开箱，每轮后等待报价。</li><li>接受报价即可终止；继续则放弃当次报价。</li><li>第四次报价后选择继续，在最后两箱中选择保留原箱或换箱，立即揭晓。</li></ol><p>九种礼物每局各一份，礼物可由房主预设或在未开箱之间调整，不保证随机结果。设置绑定箱号，换箱后领取新箱内的礼物。一位主播操作，其他人可用房间码围观；房主需保持页面打开。单人模式由熊二按剩余奖池与游戏过程自动估值。礼物名称用于娱乐模拟，不自动发送真实礼物或触发支付。</p>');};
 $('sound').onclick=()=>{muted=!muted;$('sound').textContent=muted?'音效：关':'音效：开';$('sound').setAttribute('aria-pressed',!muted);tone()};
 $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen()}catch{show('全屏提示','<p>当前浏览器暂不支持全屏，可使用 F11 放大游戏画面。</p>')}};
-document.addEventListener('keydown',e=>{if($('adminDialog')?.open||$('playerStartDialog')?.open||$('resultDialog')?.open||$('roomNameDialog')?.open||$('modal').open||$('quoteDialog').open||e.ctrlKey||e.metaKey||e.altKey||/INPUT|TEXTAREA/.test(e.target?.tagName))return;if(/^[1-9]$/.test(e.key))dispatch('box',Number(e.key)-1)});
+document.addEventListener('keydown',e=>{if($('counterofferDialog')?.open||$('adminDialog')?.open||$('playerStartDialog')?.open||$('resultDialog')?.open||$('roomNameDialog')?.open||$('modal').open||$('quoteDialog').open||e.ctrlKey||e.metaKey||e.altKey||/INPUT|TEXTAREA/.test(e.target?.tagName))return;if(/^[1-9]$/.test(e.key))dispatch('box',Number(e.key)-1)});
 function celebrate(){if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;for(let i=0;i<38;i++){const a=document.createElement('i');a.className='confetti';a.style.cssText=`left:${Math.random()*100}%;animation-delay:${Math.random()*.5}s;background:${['#b9904e','#a33450','#f3dca5'][i%3]}`;document.body.append(a);setTimeout(()=>a.remove(),3500)}}
 window.AdminDesk?.init({
  getGame:()=>game,isBusy:()=>busy,
@@ -153,6 +162,24 @@ window.GameTheatre?.init({isBusy:()=>busy||shuffling(),send:(speaker,index)=>{
 if(window.GameTheatre){document.querySelector('.stage-top').insertAdjacentHTML('afterend','<button id="startSolo" class="secondary" type="button">开始 · 打乱宝箱 ✦</button>');$('startSolo').onclick=()=>dispatch('shuffle');}
 window.Showtime?.init({decision:dispatch,art});
 window.QuotePopup?.init({decision:dispatch,art});
+window.CounterOffer?.init({getGame:()=>game,art,isBusy:()=>busy||shuffling(),privateCost:items=>{if(window.DreamRoom?.role!=='host')return null;return window.OwnerDesk?.bundleCost(items)??items.reduce((sum,item)=>sum+DreamEngine.GIFTS[item.gift].score*item.count,0);},
+ sendProposal:items=>{
+  const role=window.DreamRoom?.role||'solo';
+  if(!['solo','player'].includes(role)||busy)throw Error('只有当前操作玩家可以提出要求');
+  if(role==='player'){if(!DreamRoom.canPlay())return false;DreamRoom.request('counter',items);return true;}
+  return act('counter',items);
+ },
+ withdrawProposal:()=>{
+  const role=window.DreamRoom?.role||'solo',id=game.counterProposal?.id;
+  if(!['solo','player'].includes(role)||busy||!id)throw Error('当前无法撤回');
+  if(role==='player'){if(!DreamRoom.canPlay())return false;DreamRoom.request('withdrawCounter',id);return true;}
+  return act('withdrawCounter',id);
+ },
+ decideProposal:accept=>{
+  if(window.DreamRoom?.role!=='host'||busy||typeof accept!=='boolean')throw Error('只有房主可以审核要求');
+  game.decideCounter(game.counterProposal?.id,accept);offerStarted=Date.now();render();DreamRoom.changed();return true;
+ }
+});
 render();
 window.OwnerDesk?.init(bundle=>{if(!window.DreamRoom||DreamRoom.role!=='host'||game.phase!=='pricing')return;if(game.mode==='gift')game.setBundle(bundle);else game.setNumericOffer(bundle.value);offerStarted=Date.now();render();DreamRoom.changed();});
 window.DreamRoom?.init({render,reset,act,

@@ -57,6 +57,8 @@
       this.directorPreset = null;
       this.directorLog = [];
       this.stageEvent = null;
+      this.counterProposal = null;
+      this.counterBudget = null;
     }
     _index(i) {
       if (!Number.isInteger(i) || i < 0 || i >= this.boxes.length) throw new RangeError('无效箱号');
@@ -84,6 +86,7 @@
     open(i, manualOffer = false) {
       this._index(i);
       if (this.phase !== 'open' || i === this.selected || this.opened.includes(i)) throw new Error('当前不能打开该箱');
+      this.counterProposal=null;this.counterBudget=null;
       this.opened.push(i);
       this.round++;
       if(!QUOTE_ROUNDS.includes(this.round)){
@@ -143,6 +146,7 @@
         }
       }
       this.offer = next;
+      if(!manualOffer)this.counterBudget=this._counterLimit();
       this.phase = manualOffer ? 'pricing' : 'offer';
       if(manualOffer) this.offer = null;
       return this.gifts[this.boxes[i]];
@@ -185,7 +189,57 @@
       if(!Array.isArray(bundle)||!bundle.length||bundle.length>9) throw new Error('无效礼物组合');
       const seen=new Set(),items=bundle.map(item=>{this._index(item.gift);if(seen.has(item.gift)||!Number.isInteger(item.count)||item.count<1||item.count>99999999)throw new Error('无效礼物数量');seen.add(item.gift);return{...this.gifts[item.gift],count:item.count};});
       this.offer={name:items.map(g=>`${g.name} × ${g.count}`).join(' + '),icon:items[0].icon,items,score:items.reduce((n,g)=>n+g.score*g.count,0),issuer:'host'};
+      this.counterProposal=null;this.counterBudget??=this._counterLimit();
       this.phase='offer';return this.snapshot();
+    }
+    _counterLimit(){
+      const values=this.boxes.filter((_,i)=>!this.opened.includes(i)).map(index=>this.gifts[index].score);
+      const mean=values.reduce((sum,value)=>sum+value,0)/values.length;
+      const low=values.filter(value=>value<=520&&value<mean*.12).length/values.length;
+      const certainty=Math.pow(values.reduce((sum,value)=>sum+Math.sqrt(value),0)/values.length,2);
+      const weight=low?Math.min(.9,.5+Math.max(0,(4-values.length)/3)*.3+low*.2):0;
+      const anchor=mean-(mean-certainty)*weight;
+      return Math.max(this.offer.score,Math.floor(Math.min(mean*.75,anchor*.82)));
+    }
+    submitCounter(bundle){
+      if(this.mode!=='gift'||this.phase!=='offer'||this.counterProposal?.status==='pending')throw new Error('当前不能提出礼物还价');
+      if(!Array.isArray(bundle)||bundle.length<1||bundle.length>3)throw new Error('最多填写三组礼物');
+      const merged=new Map();
+      for(const row of bundle){
+        if(!row||typeof row!=='object'||Array.isArray(row))throw new Error('无效还价礼物');
+        if(row.gift===''||row.gift===null)continue;
+        this._index(row.gift);
+        if(!Number.isInteger(row.count)||row.count<1||row.count>9999)throw new Error('礼物数量须为1至9999的整数');
+        const count=(merged.get(row.gift)||0)+row.count;if(count>9999)throw new Error('同一礼物合计不能超过9999');merged.set(row.gift,count);
+      }
+      if(!merged.size)throw new Error('请至少选择一组礼物');
+      const items=[...merged].map(([gift,count])=>({gift,count}));
+      const id=typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
+      this.counterBudget??=this._counterLimit();
+      this.counterProposal={id,round:this.round,gameId:this.gameId,items,name:items.map(item=>`${this.gifts[item.gift].name} × ${item.count}`).join(' + '),status:'pending'};
+      return {...this.counterProposal,items:items.map(item=>({...item}))};
+    }
+    _pendingCounter(id){
+      const proposal=this.counterProposal;
+      if(this.mode!=='gift'||this.phase!=='offer'||!proposal||proposal.status!=='pending'||typeof id!=='string'||proposal.id!==id||proposal.gameId!==this.gameId||proposal.round!==this.round)throw new Error('这份还价请求已失效');
+      return proposal;
+    }
+    _counterOffer(proposal){
+      const items=proposal.items.map(item=>({...this.gifts[item.gift],count:item.count}));
+      return {name:items.map(item=>`${item.name} × ${item.count}`).join(' + '),icon:items[0].icon,items,score:items.reduce((sum,item)=>sum+item.score*item.count,0),issuer:'host'};
+    }
+    decideCounter(id,accept){
+      const proposal=this._pendingCounter(id);if(typeof accept!=='boolean')throw new Error('请明确接受或拒绝还价');
+      if(accept){this.offer=this._counterOffer(proposal);proposal.status='accepted';}
+      else{proposal.status='declined';this.offer=null;this.phase='pricing';}
+      return this.snapshot();
+    }
+    withdrawCounter(id){const proposal=this._pendingCounter(id);proposal.status='withdrawn';return this.snapshot();}
+    resolveCounterAuto(id){
+      const proposal=this._pendingCounter(id);this.counterBudget??=this._counterLimit();const offer=this._counterOffer(proposal);
+      if(offer.score<=this.counterBudget){this.offer=offer;proposal.status='accepted';}
+      else proposal.status='declined';
+      return this.snapshot();
     }
     setNumericOffer(value){
       if(this.mode==='gift'||this.phase!=='pricing')throw new Error('当前不能设置数值报价');
@@ -199,17 +253,20 @@
     }
     continue(decisionMs = 0) {
       if (this.phase !== 'offer') throw new Error('当前不能继续');
+      if(this.counterProposal?.status==='pending')throw new Error('还价等待回复，请先撤回或等房主决定');
       if (!Number.isFinite(decisionMs) || decisionMs < 0) throw new RangeError('思考时间必须为非负毫秒数');
       this.rejects++;
       this.lastDecisionMs = decisionMs;
       this.previousOfferName=this.offer.name;
       this.lastDeclinedOffer=this.offer;
       this.offer=null;
+      this.counterProposal=null;
       this.phase = this.round>=7?'final':'open';
       return this.snapshot();
     }
     accept() {
       if (this.phase !== 'offer') throw new Error('当前不能接受估值');
+      if(this.counterProposal?.status==='pending')throw new Error('还价等待回复，请先撤回或等房主决定');
       this.result = this.offer;
       this.phase = 'ended';
       this._compare('deal', this.gifts[this.boxes[this.initialSelected??this.selected]]);
@@ -243,7 +300,7 @@
     }
     snapshot() {
       const copy = value => value && { ...value, ...(value.items ? { items: value.items.map(item => ({ ...item })) } : {}) };
-      return { mode:this.mode,config:{...this.config,values:[...this.config.values]},gifts:this.gifts.map(g=>({...g})),stageEvent:this.stageEvent==null?null:JSON.parse(JSON.stringify(this.stageEvent)),boxes: [...this.boxes], directorPreset:this.directorPreset,directorLog:(this.directorLog||[]).map(e=>({...e})),gameId:this.gameId, started:this.started, selected: this.selected, initialSelected:this.initialSelected,finalChoice:this.finalChoice,opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, cadence:this.cadence,previousOfferName:this.previousOfferName,pricesVersion:this.pricesVersion,lastDeclinedOffer:copy(this.lastDeclinedOffer),comparison:this.comparison&&{...this.comparison,alternative:copy(this.comparison.alternative)},offer: copy(this.offer), result: copy(this.result) };
+      return { counterBudget:this.counterBudget,counterProposal:this.counterProposal&&{...this.counterProposal,items:this.counterProposal.items.map(item=>({...item}))},mode:this.mode,config:{...this.config,values:[...this.config.values]},gifts:this.gifts.map(g=>({...g})),stageEvent:this.stageEvent==null?null:JSON.parse(JSON.stringify(this.stageEvent)),boxes: [...this.boxes], directorPreset:this.directorPreset,directorLog:(this.directorLog||[]).map(e=>({...e})),gameId:this.gameId, started:this.started, selected: this.selected, initialSelected:this.initialSelected,finalChoice:this.finalChoice,opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, cadence:this.cadence,previousOfferName:this.previousOfferName,pricesVersion:this.pricesVersion,lastDeclinedOffer:copy(this.lastDeclinedOffer),comparison:this.comparison&&{...this.comparison,alternative:copy(this.comparison.alternative)},offer: copy(this.offer), result: copy(this.result) };
     }
   }
   Engine.GIFTS = GIFTS;
