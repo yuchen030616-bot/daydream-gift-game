@@ -58,13 +58,26 @@ const banterLines={
   ['你继续嘴硬，俺继续省钱，咱俩都有美好的未来。','俺这算盘没坏，是你的梦想还没学会看预算。','你这一犹豫，俺都听见蜂蜜罐在偷笑了。'],
   ['刚才的报价你爱理不理，等会儿可别追着俺跑。','最后这口价，俺递的是台阶，你当成了领奖台？','继续当然行，俺最喜欢看梦想自己给自己打折。']
  ],
- drink:['轻松玩一局，喝不喝都随你，咱只比手气。','水杯也能追梦，开心最要紧。','先聊聊方案，参与方式由你决定。','慢慢选，不催不劝，随时能跳过。']
+ drink:{
+  player:[
+   ['熊二，你这算盘抠得，杯里的白开水都替你脸红。','你这报价，茶叶看了都想把自己泡淡一点省钱。','杯里装什么随俺，你这良心倒是一直兑着水。'],
+   ['俺拿水杯都比你这算盘有排面，格局打开点！','俺来开箱，你在旁边给蜂蜜罐开追悼会呢？','先别替俺算口数，给你的格局也量量尺寸吧。'],
+   ['你再算算，别让杯垫都觉得你这报价垫底。','这价连白开水都嫌没味儿，你还搁这儿回甘呢？','你这算盘不是精打细算，是怕良心多占一格。'],
+   ['箱子还没开，你抱蜂蜜罐的姿势倒先练熟了。','俺选的是箱子，你这熊怎么先给预算烧香了？','你先笑着，等俺开完箱，再看看谁的算盘缺牙。']
+  ],
+  host:[
+   ['箱子还没开，你这张嘴已经把九个箱子全赢一遍了。','你那套赢法挺完整，就是还没通知箱子配合你。','你这手气先不评价，嘴倒是已经申请当大奖了。'],
+   ['你盯箱子的眼神，像极了预算只有一块还在挑顶配。','你研究的是概率？俺看是在给直觉写表扬信。','最大的还没认你，你倒先把获奖感言背熟了。'],
+   ['俺看的是箱子，你研究的是把嘴硬包装成战略。','你这算盘打得挺响，可惜响的是俺这边的。','你这一犹豫，连杯垫都替你想好了十套解释。'],
+   ['你不是在选箱，是在给等会儿的表情包选封面。','俺这报价都递到手边了，你还想给它办个选秀。','嘴硬归嘴硬，别等开完箱又说自己只是来活跃气氛。']
+  ]
+ }
 };
 function publishBanter(speaker,index){
  if(!Number.isInteger(index)||index<0||index>3||busy||shuffling())throw Error('当前不能放话');
  if(performance.now()-lastBanterAt<3000)throw Error('请稍等片刻再说');
  lastBanterAt=performance.now();const id=crypto.randomUUID(),gid=game.gameId;
- const group=game.mode==='drink'?banterLines.drink[index]:banterLines[speaker][index],key=speaker+':'+index;let text=group;
+ const group=(game.mode==='drink'?banterLines.drink[speaker]:banterLines[speaker])[index],key=(game.mode||'gift')+':'+speaker+':'+index;let text=group;
  if(Array.isArray(group)){const choices=group.map((line,i)=>({line,i})).filter(p=>p.i!==lastBanterPick[key]);const pick=choices[Math.floor(Math.random()*choices.length)];lastBanterPick[key]=pick.i;text=pick.line;}
  game.stageEvent={id,kind:'banter',speaker,text,duration:3000,active:true};render();
  setTimeout(()=>{if(game.gameId===gid&&game.stageEvent?.id===id){game.stageEvent.active=false;render();window.DreamRoom?.changed();}},3000);
