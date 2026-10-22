@@ -30,6 +30,8 @@
       this.lastDecisionMs = 0;
       this.cadence = '2-2-2-1';
       this.previousOfferName = null;
+      this.lastDeclinedOffer = null;
+      this.comparison = null;
     }
     _index(i) {
       if (!Number.isInteger(i) || i < 0 || i >= this.boxes.length) throw new RangeError('无效箱号');
@@ -117,6 +119,7 @@
       this.rejects++;
       this.lastDecisionMs = decisionMs;
       this.previousOfferName=this.offer.name;
+      this.lastDeclinedOffer=this.offer;
       this.offer=null;
       this.phase = this.round>=7?'final':'open';
       return this.snapshot();
@@ -125,7 +128,11 @@
       if (this.phase !== 'offer') throw new Error('当前不能接受估值');
       this.result = this.offer;
       this.phase = 'ended';
+      this._compare('deal', GIFTS[this.boxes[this.initialSelected??this.selected]]);
       return this.result;
+    }
+    _compare(kind, alternative) {
+      this.comparison={kind,alternative,verdict:this.result.score<alternative.score?'loss':this.result.score>alternative.score?'win':'even'};
     }
     swap() {
       if(this.phase!=='final'||this.finalChoice)throw new Error('当前不能换箱');
@@ -143,13 +150,14 @@
         this.finalChoice??='keep';
         this.result = GIFTS[this.boxes[this.selected]];
         this.phase = 'ended';
+        this._compare(this.finalChoice, this.finalChoice==='swap'?GIFTS[this.boxes[this.initialSelected]]:this.lastDeclinedOffer||this.result);
         return this.result;
       }
       return GIFTS[this.boxes[this.initialSelected]];
     }
     snapshot() {
       const copy = value => value && { ...value, ...(value.items ? { items: value.items.map(item => ({ ...item })) } : {}) };
-      return { boxes: [...this.boxes], selected: this.selected, initialSelected:this.initialSelected,finalChoice:this.finalChoice,opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, cadence:this.cadence,previousOfferName:this.previousOfferName,offer: copy(this.offer), result: copy(this.result) };
+      return { boxes: [...this.boxes], selected: this.selected, initialSelected:this.initialSelected,finalChoice:this.finalChoice,opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, cadence:this.cadence,previousOfferName:this.previousOfferName,lastDeclinedOffer:copy(this.lastDeclinedOffer),comparison:this.comparison&&{...this.comparison,alternative:copy(this.comparison.alternative)},offer: copy(this.offer), result: copy(this.result) };
     }
   }
   Engine.GIFTS = GIFTS;
