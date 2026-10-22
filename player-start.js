@@ -12,7 +12,7 @@
   if(!waiting){dismissed=false;if($('playerStartDialog').open)$('playerStartDialog').close();if(justStarted)document.querySelector('.stage')?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});return;}
   const ready=DreamRoom.canPlay();$('beginPlayer').disabled=!ready;
   $('startNickname').textContent=($('roomMyName')?.textContent||'').replace(/^我的昵称：/,'')+'，轮到你追梦啦！';
-  $('startConnection').textContent=ready?(game.director?.enabled?'本局为导演设置局：房主已设置藏宝，具体礼物仍保密。开始后先选一只保留箱。':'开始后先选一只保留箱，接下来由你决定收下报价还是继续。'):'正在等待房主同步，连接就绪后即可开始。';
+  $('startConnection').textContent=ready?'礼物可由房主预设或调整，不保证随机结果。开始后先选一只保留箱，再决定接受报价还是继续。':'正在等待房主同步，连接就绪后即可开始。';
   show();
  }
  window.PlayerStart={init(fn){dispatch=fn;

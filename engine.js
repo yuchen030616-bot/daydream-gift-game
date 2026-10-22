@@ -113,19 +113,21 @@
       if(manualOffer) this.offer = null;
       return GIFTS[this.boxes[i]];
     }
-    _moveTreasure(giftIndex) {
+    _moveTreasure(giftIndex, targetBox = this.selected) {
+      this._index(targetBox);
+      if(this.opened.includes(targetBox))throw new Error('这个箱子已经打开，不能再设置');
       const source=this.boxes.indexOf(giftIndex);
       if(source<0||this.opened.includes(source))throw new Error('这份礼物已经开出，不能放回藏宝箱');
-      [this.boxes[this.selected],this.boxes[source]]=[this.boxes[source],this.boxes[this.selected]];
+      [this.boxes[targetBox],this.boxes[source]]=[this.boxes[source],this.boxes[targetBox]];
     }
-    setTreasure(giftIndex) {
+    setTreasure(giftIndex, targetBox = this.selected) {
       this._index(giftIndex);
       if(!['select','open','pricing','final'].includes(this.phase))throw new Error('报价已发出或本局已结束，当前不能调整藏宝');
       const preset=this.selected===null;
-      if(preset){if(this.phase!=='select')throw new Error('当前没有保留箱');this.directorPreset=giftIndex;}
-      else this._moveTreasure(giftIndex);
+      if(preset){if(this.phase!=='select'||targetBox!==null)throw new Error('请先选择保留箱，再设置其他箱子');this.directorPreset=giftIndex;}
+      else this._moveTreasure(giftIndex,targetBox);
       this.directorLog??=[];
-      this.directorLog.push({action:preset?'preset':'treasure',at:Date.now(),box:this.selected,giftIndex});
+      this.directorLog.push({action:preset?'preset':'treasure',at:Date.now(),box:targetBox,giftIndex});
       return this.snapshot();
     }
     clearTreasurePreset() {
