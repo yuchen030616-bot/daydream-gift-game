@@ -9,7 +9,7 @@
   let adapter,timer,receiveChain=Promise.resolve(),sendChain=Promise.resolve(),heartbeatAt=0,owner=null,cipher,lastBroadcastAt=0,renderKey='';
   const storageKey=code=>'daydream.owner.'+code;
   function note(s){$('roomNotice').textContent=s;}
-  function linked(role){const u=new URL('index.html',location.href);u.search='?v=20261022-hostquote';u.hash=new URLSearchParams({room:room.code,...(role==='player'?{play:owner.token}:{view:'1'})}).toString();return u.href;}
+  function linked(role){const u=new URL('index.html',location.href);u.search='?v=20261022-2221';u.hash=new URLSearchParams({room:room.code,...(role==='player'?{play:owner.token}:{view:'1'})}).toString();return u.href;}
   function canPlay(){return room.role==='solo'||room.role==='player'&&room.ready&&Date.now()-room.lastHost<24000&&room.playerId===room.id&&!room.pending;}
   function update(){
     document.body.dataset.roomRole=room.role;
@@ -86,7 +86,7 @@
     cipher=await new C.Cipher(code).init();room.topic=await C.topic(code);room.closed=false;
     if(owner){
       const lease=store.get('daydream.lease.'+code);if(lease&&lease.id!==room.id&&Date.now()-lease.at<15000)throw Error('房间已在另一个房主页面打开，请先关闭那个页面，再重新连接');
-      room.rev=owner.rev||0;adapter.restore(owner.saved);room.ready=true;
+      room.rev=owner.rev||0;const migrated=adapter.restore(owner.saved);if(migrated){room.rev++;save();}room.ready=true;
     }else adapter.loadPublic({boxes:Array(9).fill(null),opened:[],selected:null,phase:'select',round:0,offer:null,result:null});
     update();connect();tick();timer=setInterval(tick,2000);
     note(room.role==='host'?'房主需保持此页在前台打开。多人联机为试用通道，页面会明确显示掉线状态；未打开的礼物不会发给主播或围观者。':'房间码可多人围观；主播操作权仅由操作链接提供。请保持页面前台打开，等待房主同步。');
@@ -106,7 +106,7 @@
       $('joinRoom').onclick=()=>{const code=$('joinCode').value;if(!C.valid(code)){note('请输入完整的12位房间码，例如 XXXX-XXXX-XXXX。');return;}enter(code);};
       $('joinCode').onkeydown=e=>{if(e.key==='Enter')$('joinRoom').click()};
       $('copyPlayer').onclick=()=>copy($('roomLink'));$('copyWatch').onclick=()=>copy($('watchLink'));
-      $('leaveRoom').onclick=()=>{if(confirm('离开房间？房主离开后，其他人将暂停同步。')){if(room.role==='host')store.set('daydream.lease.'+room.code,null);location.href=location.pathname+'?v=20261022-hostquote';}};
+      $('leaveRoom').onclick=()=>{if(confirm('离开房间？房主离开后，其他人将暂停同步。')){if(room.role==='host')store.set('daydream.lease.'+room.code,null);location.href=location.pathname+'?v=20261022-2221';}};
       $('reconnectRoom').onclick=()=>location.reload();
       window.addEventListener('pagehide',()=>{if(room.role==='host')store.set('daydream.lease.'+room.code,null);room.clients.forEach(c=>c.end(true));});
       document.addEventListener('visibilitychange',()=>{if(!document.hidden)hello();});

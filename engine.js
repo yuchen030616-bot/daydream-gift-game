@@ -5,6 +5,7 @@
     ['邮轮', '🛳️', 6000], ['钻石跑车', '🏎️', 3000], ['热气球', '🎈', 520],
     ['比心兔兔', '🐰', 299], ['亲吻', '💋', 99], ['小心心', '💗', 1]
   ].map(([name, icon, score]) => Object.freeze({ name, icon, score })));
+  const QUOTE_ROUNDS=Object.freeze([2,4,6,7]);
   class Engine {
     constructor(rng = Math.random) {
       if (typeof rng !== 'function') throw new TypeError('随机源必须为函数');
@@ -25,6 +26,8 @@
       this.result = null;
       this.rejects = 0;
       this.lastDecisionMs = 0;
+      this.cadence = '2-2-2-1';
+      this.previousOfferName = null;
     }
     _index(i) {
       if (!Number.isInteger(i) || i < 0 || i >= this.boxes.length) throw new RangeError('无效箱号');
@@ -41,6 +44,10 @@
       if (this.phase !== 'open' || i === this.selected || this.opened.includes(i)) throw new Error('当前不能打开该箱');
       this.opened.push(i);
       this.round++;
+      if(!QUOTE_ROUNDS.includes(this.round)){
+        this.offer=null;
+        return GIFTS[this.boxes[i]];
+      }
       const remaining = this.boxes.filter((_, index) => !this.opened.includes(index));
       const mean = remaining.reduce((sum, gift) => sum + GIFTS[gift].score, 0) / remaining.length;
       const random = this.rng();
@@ -76,15 +83,16 @@
       };
       const target = Math.floor(mean * factor);
       let next = combine(target);
-      if (this.offer && next.name === this.offer.name) {
+      const previousName=this.offer?.name||this.previousOfferName;
+      if (previousName && next.name === previousName) {
         for (const delta of [.012, -.012, .025, -.025]) {
           const adjusted = Math.max(0, Math.min(cap, Math.floor(target + mean * delta)));
           const candidate = combine(adjusted);
-          if (candidate.name !== this.offer.name) { next = candidate; break; }
+          if (candidate.name !== previousName) { next = candidate; break; }
         }
       }
       this.offer = next;
-      this.phase = this.round === 8 ? 'final' : manualOffer ? 'pricing' : 'offer';
+      this.phase = manualOffer ? 'pricing' : 'offer';
       if(manualOffer) this.offer = null;
       return GIFTS[this.boxes[i]];
     }
@@ -105,7 +113,9 @@
       if (!Number.isFinite(decisionMs) || decisionMs < 0) throw new RangeError('思考时间必须为非负毫秒数');
       this.rejects++;
       this.lastDecisionMs = decisionMs;
-      this.phase = 'open';
+      this.previousOfferName=this.offer.name;
+      this.offer=null;
+      this.phase = this.round>=7?'final':'open';
       return this.snapshot();
     }
     accept() {
@@ -125,10 +135,11 @@
     }
     snapshot() {
       const copy = value => value && { ...value, ...(value.items ? { items: value.items.map(item => ({ ...item })) } : {}) };
-      return { boxes: [...this.boxes], selected: this.selected, opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, offer: copy(this.offer), result: copy(this.result) };
+      return { boxes: [...this.boxes], selected: this.selected, opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, cadence:this.cadence,previousOfferName:this.previousOfferName,offer: copy(this.offer), result: copy(this.result) };
     }
   }
   Engine.GIFTS = GIFTS;
+  Engine.QUOTE_ROUNDS=QUOTE_ROUNDS;
   if (typeof module !== 'undefined' && module.exports) module.exports = Engine;
   if (root) root.DreamEngine = Engine;
 })(typeof window !== 'undefined' ? window : null);
