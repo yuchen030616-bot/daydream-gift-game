@@ -19,6 +19,8 @@
         [this.boxes[i], this.boxes[j]] = [this.boxes[j], this.boxes[i]];
       }
       this.selected = null;
+      this.initialSelected = null;
+      this.finalChoice = null;
       this.opened = [];
       this.phase = 'select';
       this.round = 0;
@@ -36,6 +38,7 @@
       this._index(i);
       if (this.phase !== 'select') throw new Error('当前不能选箱');
       this.selected = i;
+      this.initialSelected = i;
       this.phase = 'open';
       return this.snapshot();
     }
@@ -124,18 +127,29 @@
       this.phase = 'ended';
       return this.result;
     }
+    swap() {
+      if(this.phase!=='final'||this.finalChoice)throw new Error('当前不能换箱');
+      const remaining=this.boxes.map((_,i)=>i).filter(i=>!this.opened.includes(i));
+      if(remaining.length!==2||!remaining.includes(this.selected))throw new Error('仅剩两个未开箱时可以换箱');
+      this.initialSelected??=this.selected;
+      this.selected=remaining.find(i=>i!==this.selected);
+      this.finalChoice='swap';
+      return this.reveal();
+    }
     reveal() {
       if (this.phase !== 'final' && this.phase !== 'ended') throw new Error('当前不能揭晓保留箱');
-      const original = GIFTS[this.boxes[this.selected]];
+      this.initialSelected??=this.selected;
       if (this.phase === 'final') {
-        this.result = original;
+        this.finalChoice??='keep';
+        this.result = GIFTS[this.boxes[this.selected]];
         this.phase = 'ended';
+        return this.result;
       }
-      return original;
+      return GIFTS[this.boxes[this.initialSelected]];
     }
     snapshot() {
       const copy = value => value && { ...value, ...(value.items ? { items: value.items.map(item => ({ ...item })) } : {}) };
-      return { boxes: [...this.boxes], selected: this.selected, opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, cadence:this.cadence,previousOfferName:this.previousOfferName,offer: copy(this.offer), result: copy(this.result) };
+      return { boxes: [...this.boxes], selected: this.selected, initialSelected:this.initialSelected,finalChoice:this.finalChoice,opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, cadence:this.cadence,previousOfferName:this.previousOfferName,offer: copy(this.offer), result: copy(this.result) };
     }
   }
   Engine.GIFTS = GIFTS;
