@@ -6,13 +6,32 @@
     ['比心兔兔', '🐰', 299], ['亲吻', '💋', 99], ['小心心', '💗', 1]
   ].map(([name, icon, score]) => Object.freeze({ name, icon, score })));
   const QUOTE_ROUNDS=Object.freeze([2,4,6,7]);
+  function numeric(value,mode,max){
+    const scale=mode==='money'?100:1;
+    if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>max||Math.abs(value*scale-Math.round(value*scale))>1e-7)throw new RangeError(mode==='drink'?'小口数须为范围内整数':'金额须在范围内且最多两位小数');
+    return Math.round(value*scale)/scale;
+  }
+  function numericGift(value,mode){return {name:`${value} ${mode==='money'?'元':'小口'}`,icon:mode==='money'?'🪙':'🥤',score:value,value,kind:mode};}
+  function makePool(configuration){
+    const mode=configuration?.mode??'gift';
+    if(!['gift','money','drink'].includes(mode))throw new RangeError('无效游戏模式');
+    if(mode==='gift')return {mode,config:{mode,min:1,max:30000,values:GIFTS.map(g=>g.score)},gifts:GIFTS};
+    const limit=mode==='money'?1000000:5;
+    const min=numeric(configuration.min??0,mode,limit),max=numeric(configuration.max??(mode==='money'?1000:5),mode,limit);
+    if(min>max)throw new RangeError('最小值不能大于最大值');
+    const scale=mode==='money'?100:1;
+    const values=configuration.values??Array.from({length:9},(_,i)=>Math.round((min+(max-min)*i/8)*scale)/scale);
+    if(!Array.isArray(values)||values.length!==9)throw new RangeError('请设置九个箱子的数值');
+    const normalized=values.map(value=>{const result=numeric(value,mode,max);if(result<min)throw new RangeError('箱子数值不能低于最小值');return result;});
+    return {mode,config:{mode,min,max,values:normalized},gifts:normalized.map(value=>Object.freeze(numericGift(value,mode)))};
+  }
   class Engine {
-    constructor(rng = Math.random) {
+    constructor(rng = Math.random, configuration = null) {
       if (typeof rng !== 'function') throw new TypeError('随机源必须为函数');
       this.rng = rng;
       this.gameId = typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
-      this.gifts = GIFTS;
-      this.boxes = GIFTS.map((_, i) => i);
+      Object.assign(this,makePool(configuration));
+      this.boxes = this.gifts.map((_, i) => i);
       for (let i = this.boxes.length - 1; i > 0; i--) {
         const value = rng();
         if (!Number.isFinite(value) || value < 0 || value >= 1) throw new RangeError('随机数须在 [0, 1) 内');
@@ -37,9 +56,15 @@
       this.pricesVersion = 'car1500';
       this.directorPreset = null;
       this.directorLog = [];
+      this.stageEvent = null;
     }
     _index(i) {
       if (!Number.isInteger(i) || i < 0 || i >= this.boxes.length) throw new RangeError('无效箱号');
+    }
+    configure(configuration){
+      if(this.phase!=='select'||this.selected!==null)throw new Error('仅未选箱时可以更换模式');
+      const started=this.started,next=new Engine(this.rng,configuration);Object.assign(this,next);this.started=started;this.original=null;
+      return this.snapshot();
     }
     select(i) {
       this._index(i);
@@ -63,10 +88,19 @@
       this.round++;
       if(!QUOTE_ROUNDS.includes(this.round)){
         this.offer=null;
-        return GIFTS[this.boxes[i]];
+        return this.gifts[this.boxes[i]];
       }
       const remaining = this.boxes.filter((_, index) => !this.opened.includes(index));
-      const mean = remaining.reduce((sum, gift) => sum + GIFTS[gift].score, 0) / remaining.length;
+      if(this.mode!=='gift'){
+        const random=this.rng();if(!Number.isFinite(random)||random<0||random>=1)throw new RangeError('随机数须在 [0, 1) 内');
+        const mean=remaining.reduce((sum,index)=>sum+this.gifts[index].value,0)/remaining.length;
+        const factor=Math.max(.56,Math.min(.84,.60+this.round*.02+this.rejects*.012+(random*2-1)*.018));
+        const scale=this.mode==='money'?100:1;
+        const value=Math.max(this.config.min,Math.min(this.config.max,Math.floor((mean*factor+1e-9)*scale)/scale));
+        this.offer=manualOffer?null:{...numericGift(value,this.mode),factor,reason:'试探报价'};
+        this.phase=manualOffer?'pricing':'offer';return this.gifts[this.boxes[i]];
+      }
+      const mean = remaining.reduce((sum, gift) => sum + this.gifts[gift].score, 0) / remaining.length;
       const random = this.rng();
       if (!Number.isFinite(random) || random < 0 || random >= 1) throw new RangeError('随机数须在 [0, 1) 内');
       const jackpotLost = this.boxes[i] === 0;
@@ -75,7 +109,7 @@
         + (jackpotLost ? -.025 : 0) + (random * 2 - 1) * .018));
       // A certain offer becomes more attractive when the alternative can end in a tiny gift.
       // Use only the publicly remaining pool, never the reserved box's hidden content.
-      const values = remaining.map(gift => GIFTS[gift].score);
+      const values = remaining.map(gift => this.gifts[gift].score);
       const lowCount = values.filter(value => value <= 520 && value < mean * .12).length;
       const lowRisk = lowCount / values.length;
       const certaintyValue = Math.pow(values.reduce((sum, value) => sum + Math.sqrt(value), 0) / values.length, 2);
@@ -87,7 +121,7 @@
       const combine = target => {
         let rest = target;
         const items = [];
-        for (const gift of GIFTS) {
+        for (const gift of this.gifts) {
           if (gift.score > rest) continue;
           const count = Math.floor(rest / gift.score);
           items.push({ ...gift, count });
@@ -111,7 +145,7 @@
       this.offer = next;
       this.phase = manualOffer ? 'pricing' : 'offer';
       if(manualOffer) this.offer = null;
-      return GIFTS[this.boxes[i]];
+      return this.gifts[this.boxes[i]];
     }
     _moveTreasure(giftIndex, targetBox = this.selected) {
       this._index(targetBox);
@@ -121,6 +155,7 @@
       [this.boxes[targetBox],this.boxes[source]]=[this.boxes[source],this.boxes[targetBox]];
     }
     setTreasure(giftIndex, targetBox = this.selected) {
+      if(this.mode!=='gift')throw new Error('仅礼物模式支持设置藏宝');
       this._index(giftIndex);
       if(!['select','open','pricing','final'].includes(this.phase))throw new Error('报价已发出或本局已结束，当前不能调整藏宝');
       const preset=this.selected===null;
@@ -131,6 +166,7 @@
       return this.snapshot();
     }
     clearTreasurePreset() {
+      if(this.mode!=='gift')throw new Error('仅礼物模式支持设置藏宝');
       if(this.phase!=='select'||this.selected!==null)throw new Error('选箱后不能撤回预设');
       if(this.directorPreset===null)return this.snapshot();
       this.directorPreset=null;
@@ -144,11 +180,22 @@
       return this.setBundle([{gift:giftIndex,count}]);
     }
     setBundle(bundle) {
+      if(this.mode!=='gift')throw new Error('数值模式请直接设置报价');
       if(this.phase !== 'pricing') throw new Error('当前不能报价');
       if(!Array.isArray(bundle)||!bundle.length||bundle.length>9) throw new Error('无效礼物组合');
-      const seen=new Set(),items=bundle.map(item=>{this._index(item.gift);if(seen.has(item.gift)||!Number.isInteger(item.count)||item.count<1||item.count>99999999)throw new Error('无效礼物数量');seen.add(item.gift);return{...GIFTS[item.gift],count:item.count};});
+      const seen=new Set(),items=bundle.map(item=>{this._index(item.gift);if(seen.has(item.gift)||!Number.isInteger(item.count)||item.count<1||item.count>99999999)throw new Error('无效礼物数量');seen.add(item.gift);return{...this.gifts[item.gift],count:item.count};});
       this.offer={name:items.map(g=>`${g.name} × ${g.count}`).join(' + '),icon:items[0].icon,items,score:items.reduce((n,g)=>n+g.score*g.count,0),issuer:'host'};
       this.phase='offer';return this.snapshot();
+    }
+    setNumericOffer(value){
+      if(this.mode==='gift'||this.phase!=='pricing')throw new Error('当前不能设置数值报价');
+      value=numeric(value,this.mode,this.config.max);
+      this.offer={...numericGift(value,this.mode),issuer:'host'};this.phase='offer';return this.snapshot();
+    }
+    skip(){
+      if(this.mode!=='drink'||this.phase==='ended')throw new Error('当前不能跳过');
+      this.result={...numericGift(0,'drink'),name:'已跳过 · 0 小口'};this.offer=null;this.phase='ended';
+      this.comparison={kind:'skip',alternative:numericGift(0,'drink'),verdict:'even'};return this.result;
     }
     continue(decisionMs = 0) {
       if (this.phase !== 'offer') throw new Error('当前不能继续');
@@ -165,11 +212,12 @@
       if (this.phase !== 'offer') throw new Error('当前不能接受估值');
       this.result = this.offer;
       this.phase = 'ended';
-      this._compare('deal', GIFTS[this.boxes[this.initialSelected??this.selected]]);
+      this._compare('deal', this.gifts[this.boxes[this.initialSelected??this.selected]]);
       return this.result;
     }
     _compare(kind, alternative) {
-      this.comparison={kind,alternative,verdict:this.result.score<alternative.score?'loss':this.result.score>alternative.score?'win':'even'};
+      const difference=(this.result.score-alternative.score)*(this.mode==='drink'?-1:1);
+      this.comparison={kind,alternative,verdict:difference<0?'loss':difference>0?'win':'even'};
     }
     swap() {
       if(this.phase!=='final'||this.finalChoice)throw new Error('当前不能换箱');
@@ -182,22 +230,24 @@
     }
     reveal() {
       if (this.phase !== 'final' && this.phase !== 'ended') throw new Error('当前不能揭晓保留箱');
+      if(this.comparison?.kind==='skip')return this.result;
       this.initialSelected??=this.selected;
       if (this.phase === 'final') {
         this.finalChoice??='keep';
-        this.result = GIFTS[this.boxes[this.selected]];
+        this.result = this.gifts[this.boxes[this.selected]];
         this.phase = 'ended';
-        this._compare(this.finalChoice, this.finalChoice==='swap'?GIFTS[this.boxes[this.initialSelected]]:this.lastDeclinedOffer||this.result);
+        this._compare(this.finalChoice, this.finalChoice==='swap'?this.gifts[this.boxes[this.initialSelected]]:this.lastDeclinedOffer||this.result);
         return this.result;
       }
-      return GIFTS[this.boxes[this.initialSelected]];
+      return this.gifts[this.boxes[this.initialSelected]];
     }
     snapshot() {
       const copy = value => value && { ...value, ...(value.items ? { items: value.items.map(item => ({ ...item })) } : {}) };
-      return { boxes: [...this.boxes], directorPreset:this.directorPreset,directorLog:(this.directorLog||[]).map(e=>({...e})),gameId:this.gameId, started:this.started, selected: this.selected, initialSelected:this.initialSelected,finalChoice:this.finalChoice,opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, cadence:this.cadence,previousOfferName:this.previousOfferName,pricesVersion:this.pricesVersion,lastDeclinedOffer:copy(this.lastDeclinedOffer),comparison:this.comparison&&{...this.comparison,alternative:copy(this.comparison.alternative)},offer: copy(this.offer), result: copy(this.result) };
+      return { mode:this.mode,config:{...this.config,values:[...this.config.values]},gifts:this.gifts.map(g=>({...g})),stageEvent:this.stageEvent==null?null:JSON.parse(JSON.stringify(this.stageEvent)),boxes: [...this.boxes], directorPreset:this.directorPreset,directorLog:(this.directorLog||[]).map(e=>({...e})),gameId:this.gameId, started:this.started, selected: this.selected, initialSelected:this.initialSelected,finalChoice:this.finalChoice,opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, cadence:this.cadence,previousOfferName:this.previousOfferName,pricesVersion:this.pricesVersion,lastDeclinedOffer:copy(this.lastDeclinedOffer),comparison:this.comparison&&{...this.comparison,alternative:copy(this.comparison.alternative)},offer: copy(this.offer), result: copy(this.result) };
     }
   }
   Engine.GIFTS = GIFTS;
+  Engine.makePool=makePool;
   Engine.reprice = gift => {
     if(!gift)return gift;
     const items=gift.items?.map(item=>({...item,score:GIFTS.find(g=>g.name===item.name)?.score??item.score}));

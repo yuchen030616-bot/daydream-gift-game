@@ -96,6 +96,7 @@
  function tab(name){activeTab=name;for(const b of document.querySelectorAll('[data-admin-tab]'))b.setAttribute('aria-selected',b.dataset.adminTab===name);for(const p of document.querySelectorAll('[data-admin-page]'))p.hidden=p.dataset.adminPage!==name;}
  function render(g){
   if(!api)return;current=g;
+  if(g.mode&&g.mode!=='gift'){if($('adminDialog').open)$('adminDialog').close();until=0;confirming=null;peek=false;return;}
   if(lastRole&&lastRole!==role()){until=0;peek=false;cancel();}lastRole=role();
   if(g.gameId!==lastGame){peek=false;cancel();giftPoolKey='';targetPoolKey='';$('adminGift').value='';$('adminTarget').value='';lastGame=g.gameId;}
   const valid=session();$('adminLogin').hidden=valid;$('adminConsole').hidden=!valid;$('adminLogout').hidden=!valid;$('adminDialog').classList.toggle('is-locked',!valid);
@@ -120,7 +121,7 @@
  window.AdminDesk={
   authorized,
   prepare(g){
-   if(!owner())return;const gift=nextGift();if(gift===null)return;
+   if(!owner()||g.mode&&g.mode!=='gift')return;const gift=nextGift();if(gift===null)return;
    // Consume a one-round preset only when it can actually be removed from storage.
    if(!store('daydream.admin.next',null))return;g.setTreasure(gift);
   },
