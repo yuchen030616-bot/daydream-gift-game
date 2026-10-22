@@ -9,7 +9,7 @@
   let adapter,timer,receiveChain=Promise.resolve(),sendChain=Promise.resolve(),heartbeatAt=0,owner=null,cipher,lastBroadcastAt=0,renderKey='';
   const storageKey=code=>'daydream.owner.'+code;
   function note(s){$('roomNotice').textContent=s;}
-  function linked(role){const u=new URL('index.html',location.href);u.search='?v=20261022-swap';u.hash=new URLSearchParams({room:room.code,...(role==='player'?{play:owner.token}:{view:'1'})}).toString();return u.href;}
+  function linked(role){const u=new URL('index.html',location.href);u.search='?v=20261022-popup';u.hash=new URLSearchParams({room:room.code,...(role==='player'?{play:owner.token}:{view:'1'})}).toString();return u.href;}
   function canPlay(){return room.role==='solo'||room.role==='player'&&room.ready&&Date.now()-room.lastHost<24000&&room.playerId===room.id&&!room.pending;}
   function update(){
     document.body.dataset.roomRole=room.role;
@@ -106,7 +106,7 @@
       $('joinRoom').onclick=()=>{const code=$('joinCode').value;if(!C.valid(code)){note('请输入完整的12位房间码，例如 XXXX-XXXX-XXXX。');return;}enter(code);};
       $('joinCode').onkeydown=e=>{if(e.key==='Enter')$('joinRoom').click()};
       $('copyPlayer').onclick=()=>copy($('roomLink'));$('copyWatch').onclick=()=>copy($('watchLink'));
-      $('leaveRoom').onclick=()=>{if(confirm('离开房间？房主离开后，其他人将暂停同步。')){if(room.role==='host')store.set('daydream.lease.'+room.code,null);location.href=location.pathname+'?v=20261022-swap';}};
+      $('leaveRoom').onclick=()=>{if(confirm('离开房间？房主离开后，其他人将暂停同步。')){if(room.role==='host')store.set('daydream.lease.'+room.code,null);location.href=location.pathname+'?v=20261022-popup';}};
       $('reconnectRoom').onclick=()=>location.reload();
       window.addEventListener('pagehide',()=>{if(room.role==='host')store.set('daydream.lease.'+room.code,null);room.clients.forEach(c=>c.end(true));});
       document.addEventListener('visibilitychange',()=>{if(!document.hidden)hello();});

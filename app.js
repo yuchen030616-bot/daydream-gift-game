@@ -21,6 +21,7 @@ const shownReserve=game.finalChoice?game.result:game.original;if(shownReserve)$(
 $('swap').hidden=p!=='final';const other=game.boxes.findIndex((_,i)=>i!==game.selected&&!game.opened.includes(i));$('swap').textContent=other>=0?`换成 ${other+1} 号箱 · 立即开箱`:'换成另一箱';if(p==='final'){$('reveal').textContent=`保留 ${game.selected+1} 号箱 · 立即开箱`;$('hint').textContent=`原箱是 ${game.selected+1} 号，另一箱是 ${other+1} 号。选择后立即揭晓，不能再换。`;}
 if(game.finalChoice)$('history').innerHTML=`<li><span>最终选择</span><strong>${game.finalChoice==='swap'?`换箱 ${game.initialSelected+1} → ${game.selected+1} 号`:`保留 ${game.selected+1} 号箱`}</strong></li>`+$('history').innerHTML;
 window.OwnerDesk?.render(game);
+window.QuotePopup?.render(game,$('bearLine').textContent);
 }
 async function choose(i){if(busy)return;try{if(game.phase==='select'){game.select(i);tone();render();return}if(game.phase!=='open')return;busy=true;const b=document.querySelector(`[data-box="${i}"]`);b?.classList.add('revealing');document.querySelectorAll('[data-box]').forEach(x=>x.disabled=true);tone();await new Promise(r=>setTimeout(r,550));game.open(i,!!window.DreamRoom&&DreamRoom.role==='host');const g=DreamEngine.GIFTS[game.boxes[i]];log.unshift(`<span>第 ${game.round} 轮 · ${i+1}号箱</span><strong>${g.name}</strong>`);busy=false;offerStarted=Date.now();render();if(game.phase==='offer')$('accept').focus();else if(game.phase==='final')$('reveal').focus()}catch(e){busy=false;render();throw e;}}
 async function act(action,index){
@@ -37,15 +38,17 @@ $('continue').onclick=()=>dispatch('continue');
 $('accept').onclick=()=>dispatch('accept');
 $('reveal').onclick=()=>dispatch('reveal');
 $('swap').onclick=()=>dispatch('swap');
-function show(title,body){$('modalTitle').textContent=title;$('modalBody').innerHTML=body;$('modal').showModal()}
+function show(title,body){window.QuotePopup?.pause();$('modalTitle').textContent=title;$('modalBody').innerHTML=body;$('modal').showModal()}
 $('closeModal').onclick=()=>$('modal').close();
+$('modal').onclose=()=>window.QuotePopup?.render(game,$('bearLine').textContent);
 $('reset').onclick=()=>{if(busy)return;if(!['select','ended'].includes(game.phase)){show('重新开始这一局？','<p>当前梦想箱与估值将被清空，重新随机分配九份礼物。房间内所有人将同步重置。</p><button id="confirmReset" class="primary">确认重新开局</button>');$('confirmReset').onclick=()=>{$('modal').close();dispatch('reset')}}else dispatch('reset')};
 function reset(){game=new DreamEngine();log=[];offerStarted=0;render()}
 $('rules').onclick=()=>show('梦想家入场指南','<ol><li>先选一个编号箱，作为你的梦想箱。</li><li>逐个打开其他箱子，开出的礼物将被排除。</li><li>按2、2、2、1个箱子分四轮开箱，每轮后等待报价。</li><li>接受报价即可终止；继续则放弃当次报价。</li><li>第四次报价后选择继续，在最后两箱中选择保留原箱或换箱，立即揭晓。</li></ol><p>九种礼物每局各一个、随机分配。一位主播操作，其他人可用房间码围观；房主需保持页面打开。单人模式由熊二按剩余奖池与游戏过程自动估值。礼物名称用于娱乐模拟，不自动发送真实礼物或触发支付。</p>');
 $('sound').onclick=()=>{muted=!muted;$('sound').textContent=muted?'音效：关':'音效：开';$('sound').setAttribute('aria-pressed',!muted);tone()};
 $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen()}catch{show('全屏提示','<p>当前浏览器暂不支持全屏，可使用 F11 放大游戏画面。</p>')}};
-document.addEventListener('keydown',e=>{if($('modal').open||e.ctrlKey||e.metaKey||e.altKey||/INPUT|TEXTAREA/.test(e.target?.tagName))return;if(/^[1-9]$/.test(e.key))dispatch('box',Number(e.key)-1)});
+document.addEventListener('keydown',e=>{if($('modal').open||$('quoteDialog').open||e.ctrlKey||e.metaKey||e.altKey||/INPUT|TEXTAREA/.test(e.target?.tagName))return;if(/^[1-9]$/.test(e.key))dispatch('box',Number(e.key)-1)});
 function celebrate(){if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;for(let i=0;i<38;i++){const a=document.createElement('i');a.className='confetti';a.style.cssText=`left:${Math.random()*100}%;animation-delay:${Math.random()*.5}s;background:${['#b9904e','#a33450','#f3dca5'][i%3]}`;document.body.append(a);setTimeout(()=>a.remove(),3500)}}
+window.QuotePopup?.init({decision:dispatch,art});
 render();
 window.OwnerDesk?.init(bundle=>{if(!window.DreamRoom||DreamRoom.role!=='host'||game.phase!=='pricing')return;game.setBundle(bundle);offerStarted=Date.now();render();DreamRoom.changed();});
 window.DreamRoom?.init({render,reset,act,
