@@ -12,6 +12,7 @@
  function showEvent(event){
   stop();if(event.kind==='shuffle'){
    $('theatreShuffle').hidden=false;
+   $('theatreShuffleLine').textContent=String(event.text||'熊二正在洗牌，请稍候…');
    const stage=document.querySelector('.stage');stage?.scrollIntoView?.({behavior:'instant',block:'center'});
   }else if(event.kind==='banter'){
    const bubble=$('theatreBanter');(document.querySelector('dialog[open]')||document.body).appendChild(bubble);$('theatreSpeaker').textContent=event.speaker==='host'?'熊二 · 谈判放话':'追梦人 · 接招吧';$('theatreLine').textContent=String(event.text||'');bubble.hidden=false;
@@ -32,7 +33,7 @@
  }
  window.GameTheatre={init(options){if(api)return;api=options;
   const stage=document.querySelector('.stage');if(!stage)return;stage.style.position='relative';
-  stage.insertAdjacentHTML('beforeend',`<div id="theatreShuffle" class="theatre-shuffle" role="status" aria-live="polite" hidden><span class="theatre-kicker">BEAR'S SECRET SHUFFLE</span><h3>九只梦盒，重新藏好。</h3><div class="theatre-shuffle-boxes" aria-hidden="true">${Array.from({length:9},(_,i)=>`<i style="--box:${i}"><span>✦</span></i>`).join('')}</div><p>熊二正在洗牌，请稍候…</p></div>`);
+  stage.insertAdjacentHTML('beforeend',`<div id="theatreShuffle" class="theatre-shuffle" role="status" aria-live="polite" hidden><span class="theatre-kicker">BEAR'S SECRET SHUFFLE</span><h3>九只梦盒，重新藏好。</h3><div class="theatre-shuffle-boxes" aria-hidden="true">${Array.from({length:9},(_,i)=>`<i style="--box:${i}"><span>✦</span></i>`).join('')}</div><p id="theatreShuffleLine">熊二正在洗牌，请稍候…</p></div>`);
   const controls=`<section id="theatreControls" class="theatre-controls" aria-label="直播放话互动"><div class="theatre-controls-heading"><strong>✦ 森林放话台</strong><span>隔空过招，给梦想加点戏</span></div><div id="playerBanter" class="theatre-button-row">${['嘴硬一下','我要大的','再加点','这局不怂'].map((text,i)=>`<button type="button" data-theatre-speaker="player" data-theatre-index="${i}">${escape(text)}</button>`).join('')}</div><div id="hostBanter" class="theatre-button-row" hidden>${['见好就收','小奖还在','俺再算算','最后一口'].map((text,i)=>`<button type="button" data-theatre-speaker="host" data-theatre-index="${i}">${escape(text)}</button>`).join('')}</div><p id="theatreNotice" role="status" aria-live="polite"></p></section>`;
   document.querySelector('.decision').insertAdjacentHTML('afterend',controls);
   document.body.insertAdjacentHTML('beforeend','<aside id="theatreBanter" class="theatre-banter" role="status" aria-live="polite" hidden><img src="assets/bear-negotiator.png" alt="熊二"><div><span id="theatreSpeaker"></span><p id="theatreLine"></p></div></aside>');

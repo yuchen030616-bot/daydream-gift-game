@@ -36,7 +36,7 @@
     else if(game.counterProposal?.status==='accepted')$('quotePending').textContent='组合要求已被接受，这是一份新报价；仍需玩家确认成交。';
     else if(game.counterProposal?.status==='declined'&&game.phase==='offer')$('quotePending').textContent='熊二没有同意这份要求，原报价仍然有效；可接受或继续开箱。';
     if(publicMode){$('quoteBearLine').textContent=drink?'这是一份自愿提案，按自己的意愿选择就好；可以继续开箱，也可以跳过或用水替代。':line;$('quotePopupGift').innerHTML=api.art(game.offer)+`<strong>${game.offer.name}</strong>`;$('quoteAudience').textContent='第 '+(DreamEngine.QUOTE_ROUNDS.indexOf(game.round)+1)+' 次报价 · 已开 '+game.round+' 箱';}
-    if(dismissed||$('modal').open||$('adminDialog')?.open||$('counterofferDialog')?.open){close();return;}
+    if(dismissed||$('modal').open||$('adminDialog')?.open||$('counterofferDialog')?.open||$('reshuffleDialog')?.open){close();return;}
     if(privateMode)$('quotePrivate').appendChild($('ownerDesk'));else restoreDesk();
     if(!$('quoteDialog').open)$('quoteDialog').showModal();
     else if(changed)$('closeQuote').focus();

@@ -38,6 +38,7 @@ if($('startSolo')){$('startSolo').hidden=!!window.DreamRoom&&DreamRoom.role!=='s
 window.OwnerDesk?.render(game);
 window.QuotePopup?.render(game,$('bearLine').textContent);
 window.CounterOffer?.render(game);
+window.ReshufflePrompt?.render(game);
 window.Showtime?.render(game);
 window.PlayerStart?.render(game);
 window.AdminDesk?.render(game);
@@ -83,10 +84,10 @@ function publishBanter(speaker,index){
  game.stageEvent={id,kind:'banter',speaker,text,duration:3000,active:true};render();
  setTimeout(()=>{if(game.gameId===gid&&game.stageEvent?.id===id){game.stageEvent.active=false;render();window.DreamRoom?.changed();}},3000);
 }
-async function startAnimation(start=true){
+async function startAnimation(start=true,text='熊二正在洗牌，请稍候…',speaker='host'){
  if(busy||game.phase!=='select'||game.selected!==null)throw Error('当前不能洗牌');
  if(start)game.start();
- const id=crypto.randomUUID(),gid=game.gameId;busy=true;game.stageEvent={id,kind:'shuffle',speaker:'host',text:'九只梦盒，重新藏好。',duration:2200,active:true};
+ const id=crypto.randomUUID(),gid=game.gameId;busy=true;game.stageEvent={id,kind:'shuffle',speaker,text,duration:2200,active:true};
  render();window.DreamRoom?.changed();
  await new Promise(resolve=>setTimeout(resolve,2200));
  if(game.gameId===gid&&game.stageEvent?.id===id){game.stageEvent.active=false;busy=false;render();}
@@ -95,6 +96,13 @@ async function act(action,index){
  if((busy||shuffling())&&action!=='reset')throw Error('请等待动画结束');
  if(action==='start')await startAnimation();
  else if(action==='shuffle'){if(window.DreamRoom&&DreamRoom.role!=='solo')throw Error('当前不能操作');await startAnimation(false);}
+ else if(action==='reshuffle'){
+  if(window.DreamRoom&&!['host','solo'].includes(DreamRoom.role))throw Error('请由当前操作玩家发送洗牌请求');
+  if(!index||typeof index!=='object'||Array.isArray(index)||Object.keys(index).length!==2||!Object.prototype.hasOwnProperty.call(index,'confirmed')||!Object.prototype.hasOwnProperty.call(index,'gameId')||index.confirmed!==true||typeof index.gameId!=='string'||index.gameId!==game.gameId)throw Error('请先明确接受发送这句话；本局变化后需要重新确认');
+  const config=JSON.parse(JSON.stringify(game.config));game=new DreamEngine(Math.random,config);game.started=true;
+  log=['<span>重新洗牌 · 玩家请求</span><strong>求求熊二大王了，我是你的兵</strong>'];offerStarted=0;lastBanterAt=-Infinity;
+  await startAnimation(false,'求求熊二大王了，我是你的兵','player');
+ }
  else if(action==='banter')publishBanter('player',index);
  else if(action==='counter'){
   const p=game.submitCounter(index),gid=game.gameId;render();
@@ -130,7 +138,7 @@ function reset(){const config=game.mode!=='gift'?game.config:null;game=new Dream
 $('rules').onclick=()=>{if(game.mode!=='gift'){show('爱做梦的熊二 · '+(game.mode==='drink'?'轻饮玩法':'金额玩法'),'<ol><li>设置范围，自动生成九个数，逐项修改后点击确认使用。</li><li>开始并看完洗牌，再保留一只箱子。</li><li>按2→2→2→1开其他箱，每轮决定接受报价或继续。</li><li>最后两箱可保留或换箱，选择后立即结算。</li></ol><p>'+(game.mode==='drink'?'仅限成年人自愿参与，小口数为游戏标记。可随时跳过、不喝，或用水等无酒精饮品替代，不限时、不劝酒。':'金额用于娱乐模拟，不触发转账或支付。')+'</p><p>房间由房主选择版本，玩家可在开始前修改本版数值；房主保持页面打开以同步游戏。</p>');return;}show('梦想家入场指南','<ol><li>先选一个编号箱，作为你的梦想箱。</li><li>逐个打开其他箱子，开出的礼物将被排除。</li><li>按2、2、2、1个箱子分四轮开箱，每轮后等待报价。</li><li>接受报价即可终止；继续则放弃当次报价。</li><li>第四次报价后选择继续，在最后两箱中选择保留原箱或换箱，立即揭晓。</li></ol><p>九种礼物每局各一份，礼物可由房主预设或在未开箱之间调整，不保证随机结果。设置绑定箱号，换箱后领取新箱内的礼物。一位主播操作，其他人可用房间码围观；房主需保持页面打开。单人模式由熊二按剩余奖池与游戏过程自动估值。礼物名称用于娱乐模拟，不自动发送真实礼物或触发支付。</p>');};
 $('sound').onclick=()=>{muted=!muted;$('sound').textContent=muted?'音效：关':'音效：开';$('sound').setAttribute('aria-pressed',!muted);tone()};
 $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen()}catch{show('全屏提示','<p>当前浏览器暂不支持全屏，可使用 F11 放大游戏画面。</p>')}};
-document.addEventListener('keydown',e=>{if($('counterofferDialog')?.open||$('adminDialog')?.open||$('playerStartDialog')?.open||$('resultDialog')?.open||$('roomNameDialog')?.open||$('modal').open||$('quoteDialog').open||e.ctrlKey||e.metaKey||e.altKey||/INPUT|TEXTAREA/.test(e.target?.tagName))return;if(/^[1-9]$/.test(e.key))dispatch('box',Number(e.key)-1)});
+document.addEventListener('keydown',e=>{if($('reshuffleDialog')?.open||$('counterofferDialog')?.open||$('adminDialog')?.open||$('playerStartDialog')?.open||$('resultDialog')?.open||$('roomNameDialog')?.open||$('modal').open||$('quoteDialog').open||e.ctrlKey||e.metaKey||e.altKey||/INPUT|TEXTAREA/.test(e.target?.tagName))return;if(/^[1-9]$/.test(e.key))dispatch('box',Number(e.key)-1)});
 function celebrate(){if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;for(let i=0;i<38;i++){const a=document.createElement('i');a.className='confetti';a.style.cssText=`left:${Math.random()*100}%;animation-delay:${Math.random()*.5}s;background:${['#b9904e','#a33450','#f3dca5'][i%3]}`;document.body.append(a);setTimeout(()=>a.remove(),3500)}}
 window.AdminDesk?.init({
  getGame:()=>game,isBusy:()=>busy,
@@ -180,6 +188,12 @@ window.CounterOffer?.init({getGame:()=>game,art,isBusy:()=>busy||shuffling(),pri
   game.decideCounter(game.counterProposal?.id,accept);offerStarted=Date.now();render();DreamRoom.changed();return true;
  }
 });
+window.ReshufflePrompt?.init({getGame:()=>game,isBusy:()=>busy||shuffling(),request:()=>{
+ const role=window.DreamRoom?.role||'solo';if(!['player','solo'].includes(role)||busy||shuffling())throw Error('当前无法请求洗牌');
+ const request={confirmed:true,gameId:game.gameId};
+ if(role==='player'){if(!DreamRoom.canPlay())return false;DreamRoom.request('reshuffle',request);return true;}
+ return act('reshuffle',request);
+}});
 render();
 window.OwnerDesk?.init(bundle=>{if(!window.DreamRoom||DreamRoom.role!=='host'||game.phase!=='pricing')return;if(game.mode==='gift')game.setBundle(bundle);else game.setNumericOffer(bundle.value);offerStarted=Date.now();render();DreamRoom.changed();});
 window.DreamRoom?.init({render,reset,act,
