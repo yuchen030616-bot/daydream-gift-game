@@ -7,9 +7,8 @@
   ].map(([name, icon, score]) => Object.freeze({ name, icon, score })));
   const QUOTE_ROUNDS=Object.freeze([2,4,6,7]);
   function numeric(value,mode,max){
-    const scale=mode==='money'?100:1;
-    if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>max||Math.abs(value*scale-Math.round(value*scale))>1e-7)throw new RangeError(mode==='drink'?'小口数须为范围内整数':'金额须在范围内且最多两位小数');
-    return Math.round(value*scale)/scale;
+    if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>max||(mode==='drink'&&!Number.isInteger(value)))throw new RangeError(mode==='drink'?'小口数须为范围内整数':'金额须为范围内非负数');
+    return Math.round(value)||0;
   }
   function numericGift(value,mode){return {name:`${value} ${mode==='money'?'元':'小口'}`,icon:mode==='money'?'🪙':'🥤',score:value,value,kind:mode};}
   function makePool(configuration){
@@ -17,12 +16,13 @@
     if(!['gift','money','drink'].includes(mode))throw new RangeError('无效游戏模式');
     if(mode==='gift')return {mode,config:{mode,min:1,max:30000,values:GIFTS.map(g=>g.score)},gifts:GIFTS};
     const limit=mode==='money'?1000000:5;
-    const min=numeric(configuration.min??0,mode,limit),max=numeric(configuration.max??(mode==='money'?1000:5),mode,limit);
-    if(min>max)throw new RangeError('最小值不能大于最大值');
-    const scale=mode==='money'?100:1;
-    const values=configuration.values??Array.from({length:9},(_,i)=>Math.round((min+(max-min)*i/8)*scale)/scale);
+    const rawMin=configuration.min??0,rawMax=configuration.max??(mode==='money'?1000:5);
+    const min=numeric(rawMin,mode,limit),max=numeric(rawMax,mode,limit);
+    if(rawMin>rawMax)throw new RangeError('最小值不能大于最大值');
+    const explicit=configuration.values!==undefined;
+    const values=configuration.values??Array.from({length:9},(_,i)=>Math.round(min+(max-min)*i/8));
     if(!Array.isArray(values)||values.length!==9)throw new RangeError('请设置九个箱子的数值');
-    const normalized=values.map(value=>{const result=numeric(value,mode,max);if(result<min)throw new RangeError('箱子数值不能低于最小值');return result;});
+    const normalized=values.map(value=>{const result=numeric(value,mode,explicit?rawMax:max);if(value<(explicit?rawMin:min))throw new RangeError('箱子数值不能低于最小值');return result;});
     return {mode,config:{mode,min,max,values:normalized},gifts:normalized.map(value=>Object.freeze(numericGift(value,mode)))};
   }
   class Engine {
@@ -95,8 +95,8 @@
         const random=this.rng();if(!Number.isFinite(random)||random<0||random>=1)throw new RangeError('随机数须在 [0, 1) 内');
         const mean=remaining.reduce((sum,index)=>sum+this.gifts[index].value,0)/remaining.length;
         const factor=Math.max(.56,Math.min(.84,.60+this.round*.02+this.rejects*.012+(random*2-1)*.018));
-        const scale=this.mode==='money'?100:1;
-        const value=Math.max(this.config.min,Math.min(this.config.max,Math.floor((mean*factor+1e-9)*scale)/scale));
+        const rounded=this.mode==='money'?Math.round(mean*factor):Math.floor(mean*factor+1e-9);
+        const value=Math.max(this.config.min,Math.min(this.config.max,rounded));
         this.offer=manualOffer?null:{...numericGift(value,this.mode),factor,reason:'试探报价'};
         this.phase=manualOffer?'pricing':'offer';return this.gifts[this.boxes[i]];
       }
@@ -248,6 +248,7 @@
   }
   Engine.GIFTS = GIFTS;
   Engine.makePool=makePool;
+  Engine.moneyGift=value=>numericGift(numeric(value,'money',1000000),'money');
   Engine.reprice = gift => {
     if(!gift)return gift;
     const items=gift.items?.map(item=>({...item,score:GIFTS.find(g=>g.name===item.name)?.score??item.score}));

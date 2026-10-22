@@ -3,6 +3,16 @@ const assets=['carnival.png','airship.svg','douyin.png','cruise.png','car.svg','
 let game=new DreamEngine(),busy=false,muted=true,log=[],offerStarted=0;
 const pool=()=>game.gifts||DreamEngine.GIFTS;
 const shuffling=()=>game.stageEvent?.kind==='shuffle'&&game.stageEvent.active===true;
+function normalizeMoneyState(state){
+ if(state.mode!=='money')return false;
+ const before=JSON.stringify([state.config,state.gifts||state.pool,state.offer,state.result,state.original,state.lastDeclinedOffer,state.comparison]);
+ const source=state.gifts||state.pool,next=DreamEngine.makePool({mode:'money',min:Math.round(state.config.min),max:Math.round(state.config.max),values:source.map(g=>Math.round(g.value??g.score))});
+ state.config=next.config;state.gifts=next.gifts;
+ const roundGift=g=>g?{...g,...DreamEngine.moneyGift(g.value??g.score)}:g;
+ for(const key of ['offer','result','original','lastDeclinedOffer'])if(state[key])state[key]=roundGift(state[key]);
+ if(state.comparison){state.comparison={...state.comparison,alternative:roundGift(state.comparison.alternative)};if(state.result){const a=state.result.value,b=state.comparison.alternative.value;state.comparison.verdict=a>b?'win':a<b?'loss':'even';}}
+ return before!==JSON.stringify([state.config,state.gifts,state.offer,state.result,state.original,state.lastDeclinedOffer,state.comparison]);
+}
 function art(g,cls='gift-art'){if(g.kind==='money'||g.kind==='drink')return `<span class="${cls} numeric-art kind-${g.kind}"><strong>${Number(g.value)}</strong><small>${g.kind==='money'?'元':'小口'}</small></span>`;const visual=g.items?.[0]||g;const i=DreamEngine.GIFTS.findIndex(x=>x.name===visual.name);return `<img class="${cls}" src="assets/${assets[i]}" alt="${visual.name}">`;}
 function tone(win=false){if(muted)return;try{const a=new(window.AudioContext||window.webkitAudioContext)();[0,1,2].forEach((n)=>{const o=a.createOscillator(),v=a.createGain();o.connect(v);v.connect(a.destination);o.frequency.value=(win?523:330)*[1,1.25,1.5][n];v.gain.setValueAtTime(.035,a.currentTime+n*.1);v.gain.exponentialRampToValueAtTime(.001,a.currentTime+n*.1+.35);o.start(a.currentTime+n*.1);o.stop(a.currentTime+n*.1+.4)});setTimeout(()=>a.close(),1000)}catch{}}
 function render(){const p=game.phase,playable=!window.DreamRoom||DreamRoom.canPlay();document.body.dataset.phase=p;$('round').textContent=String(game.round).padStart(2,'0');$('progress').value=game.round;
@@ -34,17 +44,29 @@ window.GameModes?.render(game);
 window.GameTheatre?.render(game);
 }
 async function choose(i){if(busy||shuffling()||game.started===false)return;try{if(game.phase==='select'){game.select(i);tone();render();return}if(game.phase!=='open')return;busy=true;const b=document.querySelector(`[data-box="${i}"]`);b?.classList.add('revealing');document.querySelectorAll('[data-box]').forEach(x=>x.disabled=true);tone();await new Promise(r=>setTimeout(r,550));game.open(i,!!window.DreamRoom&&DreamRoom.role==='host');const g=pool()[game.boxes[i]];log.unshift(`<span>第 ${game.round} 轮 · ${i+1}号箱</span><strong>${g.name}</strong>`);busy=false;offerStarted=Date.now();render();if(game.phase==='offer')$('accept').focus();else if(game.phase==='final')$('reveal').focus()}catch(e){busy=false;render();throw e;}}
-let lastBanterAt=-Infinity;
+let lastBanterAt=-Infinity;const lastBanterPick={};
 const banterLines={
- player:['熊二，别捂着蜂蜜罐啦，俺可没那么好打发！','小算盘收一收，今天俺可是带着大梦想来的！','这口价不够香，再添一点，咱才好商量嘛！','嘿嘿，嘴上先不认输，下一箱咱走着瞧！'],
- host:['大的还在做梦，小的可就在箱里等着呢～这口价，稳当！','别只盯着最大的呀，小礼物还没走呢，俺这报价可落袋为安。','俺这算盘珠子都快冒烟啦，你再琢磨琢磨？','这口蜂蜜俺都舍不得，收不收，就看你这一念啦！'],
+ player:[
+  ['熊二，你这报价是算盘坏了，还是良心放假了？','你这蜂蜜罐封得挺严，良心也一块儿封进去了？','这价一出，算盘都想辞职：太丢珠子了！'],
+  ['俺来追梦，你拿这点报价打发俺做午休呢？','小算盘先收一收，俺的梦想可不按你的胆量卖。','你先别替俺心疼大奖，心疼心疼你的格局吧。'],
+  ['再加点！你这报价，连蜂蜜罐底儿都没刮干净。','报价这么抠，蜂蜜都拿去给算盘上油了？','再往上报报，别让俺以为你在清仓处理良心。'],
+  ['俺还没怂呢，你这蜂蜜罐倒先抱出汗了。','别催俺收手，你越心疼，俺越想看看下一箱。','你先笑着，等会儿算盘崩了，可别找俺捡珠子。']
+ ],
+ host:[
+  ['哟，嘴上嫌俺抠，眼睛倒把这报价盘出包浆了。','梦想挺大，胆子正好够给俺看蜂蜜罐，嘿嘿。','这价你不收也行，俺最爱看人替俺省预算。'],
+  ['你光盯着最大的，最小的都快叫你名字了。','嘴比大奖还大，手气可别最后只够擦罐底儿。','别急着嫌少，下个小奖说不定就是你的梦中情箱。'],
+  ['你继续嘴硬，俺继续省钱，咱俩都有美好的未来。','俺这算盘没坏，是你的梦想还没学会看预算。','你这一犹豫，俺都听见蜂蜜罐在偷笑了。'],
+  ['刚才的报价你爱理不理，等会儿可别追着俺跑。','最后这口价，俺递的是台阶，你当成了领奖台？','继续当然行，俺最喜欢看梦想自己给自己打折。']
+ ],
  drink:['轻松玩一局，喝不喝都随你，咱只比手气。','水杯也能追梦，开心最要紧。','先聊聊方案，参与方式由你决定。','慢慢选，不催不劝，随时能跳过。']
 };
 function publishBanter(speaker,index){
  if(!Number.isInteger(index)||index<0||index>3||busy||shuffling())throw Error('当前不能放话');
  if(performance.now()-lastBanterAt<3000)throw Error('请稍等片刻再说');
  lastBanterAt=performance.now();const id=crypto.randomUUID(),gid=game.gameId;
- game.stageEvent={id,kind:'banter',speaker,text:(game.mode==='drink'?banterLines.drink:banterLines[speaker])[index],duration:3000,active:true};render();
+ const group=game.mode==='drink'?banterLines.drink[index]:banterLines[speaker][index],key=speaker+':'+index;let text=group;
+ if(Array.isArray(group)){const choices=group.map((line,i)=>({line,i})).filter(p=>p.i!==lastBanterPick[key]);const pick=choices[Math.floor(Math.random()*choices.length)];lastBanterPick[key]=pick.i;text=pick.line;}
+ game.stageEvent={id,kind:'banter',speaker,text,duration:3000,active:true};render();
  setTimeout(()=>{if(game.gameId===gid&&game.stageEvent?.id===id){game.stageEvent.active=false;render();window.DreamRoom?.changed();}},3000);
 }
 async function startAnimation(start=true){
@@ -124,8 +146,8 @@ window.DreamRoom?.init({render,reset,act,
  prepareRoom:()=>{game.started=false;render();},
  publicState:()=>RoomCore.publicState(game),
  save:()=>({game:game.snapshot(),original:game.original||null,offerStarted}),
- restore:s=>{if(!s)return false;game=Object.assign(new DreamEngine(),s.game);const needStart=!Object.prototype.hasOwnProperty.call(s.game,'started')&&s.game.phase==='select',oldCadence=s.game.cadence!=='2-2-2-1',migrated=needStart||oldCadence||!Object.prototype.hasOwnProperty.call(s.game,'initialSelected')||s.game.pricesVersion!=='car1500';if(needStart)game.started=false;if(s.game.pricesVersion!=='car1500'){game.pricesVersion='car1500';for(const key of ['offer','result','lastDeclinedOffer'])game[key]=DreamEngine.reprice(game[key]);if(game.comparison){game.comparison.alternative=DreamEngine.reprice(game.comparison.alternative);game._compare(game.comparison.kind,game.comparison.alternative);}}game.initialSelected??=game.selected;game.finalChoice??=null;if(oldCadence){game.cadence='2-2-2-1';if(['offer','pricing'].includes(game.phase)&&!DreamEngine.QUOTE_ROUNDS.includes(game.round)){game.phase=game.round>=7?'final':'open';game.offer=null;}if(game.phase==='open'){game.offer=null;if(game.round>=7)game.phase='final';}}if(game.stageEvent?.active){game.stageEvent.active=false;busy=false;}game.original=s.original;offerStarted=s.offerStarted||0;log=game.opened.map((b,i)=>`<span>第 ${i+1} 轮 · ${b+1}号箱</span><strong>${pool()[game.boxes[b]].name}</strong>`).reverse();render();return migrated;},
- loadPublic:s=>{const previous=game.phase;game=s;game.mode??='gift';game.gifts=game.mode==='gift'?DreamEngine.GIFTS:s.pool.map(g=>({...g,score:g.value}));busy=false;log=s.opened.map((b,i)=>`<span>第 ${i+1} 轮 · ${b+1}号箱</span><strong>${pool()[s.boxes[b]].name}</strong>`).reverse();render();if(previous!=='ended'&&s.phase==='ended'){celebrate();tone(true)}}
+ restore:s=>{if(!s)return false;game=Object.assign(new DreamEngine(),s.game);const needStart=!Object.prototype.hasOwnProperty.call(s.game,'started')&&s.game.phase==='select',oldCadence=s.game.cadence!=='2-2-2-1',migrated=needStart||oldCadence||!Object.prototype.hasOwnProperty.call(s.game,'initialSelected')||s.game.pricesVersion!=='car1500';if(needStart)game.started=false;if(s.game.pricesVersion!=='car1500'){game.pricesVersion='car1500';for(const key of ['offer','result','lastDeclinedOffer'])game[key]=DreamEngine.reprice(game[key]);if(game.comparison){game.comparison.alternative=DreamEngine.reprice(game.comparison.alternative);game._compare(game.comparison.kind,game.comparison.alternative);}}game.initialSelected??=game.selected;game.finalChoice??=null;if(oldCadence){game.cadence='2-2-2-1';if(['offer','pricing'].includes(game.phase)&&!DreamEngine.QUOTE_ROUNDS.includes(game.round)){game.phase=game.round>=7?'final':'open';game.offer=null;}if(game.phase==='open'){game.offer=null;if(game.round>=7)game.phase='final';}}if(game.stageEvent?.active){game.stageEvent.active=false;busy=false;}game.original=s.original;const moneyMigrated=normalizeMoneyState(game);offerStarted=s.offerStarted||0;log=game.opened.map((b,i)=>`<span>第 ${i+1} 轮 · ${b+1}号箱</span><strong>${pool()[game.boxes[b]].name}</strong>`).reverse();render();return migrated||moneyMigrated;},
+ loadPublic:s=>{const previous=game.phase;game=s;game.mode??='gift';game.gifts=game.mode==='gift'?DreamEngine.GIFTS:s.pool.map(g=>({...g,score:g.value}));normalizeMoneyState(game);busy=false;log=s.opened.map((b,i)=>`<span>第 ${i+1} 轮 · ${b+1}号箱</span><strong>${pool()[s.boxes[b]].name}</strong>`).reverse();render();if(previous!=='ended'&&s.phase==='ended'){celebrate();tone(true)}}
 });
 
 

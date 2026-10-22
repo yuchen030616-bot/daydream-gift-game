@@ -3,12 +3,12 @@
  const Engine=typeof DreamEngine!=='undefined'?DreamEngine:typeof require==='function'?require('./engine.js'):null;
  const TITLES={gift:'主播礼物版',money:'普通金额版',drink:'轻饮挑战版'};
  const unit=mode=>mode==='money'?'元':'小口';
- function generate(mode,min,max,rng=Math.random){
+ function generate(mode,min,max,rng=Math.random,previous=[]){
   if(!['money','drink'].includes(mode))throw Error('请选择普通版或喝酒版');
-  Engine.makePool({mode,min,max});
+  const limits=Engine.makePool({mode,min,max}).config;min=limits.min;max=limits.max;
   const weights=mode==='money'?[1,.7,.45,.25,.12,.06,.025,.01,0]:[1,.875,.75,.625,.5,.375,.25,.125,0];
-  const scale=mode==='drink'||Number.isInteger(min)&&Number.isInteger(max)?1:100;
-  const values=weights.map((w,i)=>{const r=rng();if(!Number.isFinite(r)||r<0||r>=1)throw Error('随机源无效');const jitter=mode==='money'&&i>0&&i<8?(r-.5)*.025:0;return Math.max(min,Math.min(max,Math.round((min+(max-min)*Math.max(0,Math.min(1,w+jitter)))*scale)/scale));}).sort((a,b)=>b-a);
+  const values=weights.map((w,i)=>{const r=rng();if(!Number.isFinite(r)||r<0||r>=1)throw Error('随机源无效');if(i===0)return max;if(i===8)return min;const point=mode==='drink'?min+Math.floor(r*(max-min+1)):min+(max-min)*Math.max(0,Math.min(1,w+(r-.5)*.18));return Math.max(min,Math.min(max,Math.round(point)));}).sort((a,b)=>b-a);
+  if(min<max&&values.every((v,i)=>v===previous[i])){values[4]+=values[4]<max?1:-1;values.sort((a,b)=>b-a);}
   return Engine.makePool({mode,min,max,values}).config;
  }
  const defaults=mode=>mode==='gift'?{mode:'gift'}:generate(mode,mode==='money'?1:0,mode==='money'?1000:3);
@@ -25,11 +25,12 @@
  function remember(config){try{localStorage.setItem('daydream.pool.'+config.mode,JSON.stringify(config));}catch{}}
  function writeDraft(config){
   $('modeMin').value=String(config.min);$('modeMax').value=String(config.max);
-  const step=config.mode==='drink'?'1':'.01',max=config.mode==='drink'?5:1000000;
+  const step='1',max=config.mode==='drink'?5:1000000;
   for(const id of ['modeMin','modeMax']){$(id).step=step;$(id).max=String(max);$(id).min='0';}
   $('modeValues').innerHTML=config.values.map((value,i)=>`<label>${String(i+1).padStart(2,'0')} 号数值<input type="number" data-pool-value="${i}" aria-label="第${i+1}项数值" min="${config.min}" max="${config.max}" step="${step}" inputmode="decimal" value="${value}"><span>${unit(config.mode)}</span></label>`).join('');
-  for(const input of document.querySelectorAll('[data-pool-value]'))input.oninput=()=>feedback('已修改草稿，点“确认使用”后才会进入宝箱。');
+  for(const input of document.querySelectorAll('[data-pool-value]')){input.oninput=()=>feedback('已修改草稿，点“确认使用”后才会进入宝箱。');input.onchange=()=>roundInput(input,config.mode);}
  }
+ function roundInput(input,mode){if(mode!=='money'||input.value.trim()==='')return;const value=Number(input.value);if(Number.isFinite(value)&&value>=0&&value<=1000000){input.value=String(Math.round(value));feedback('已四舍五入为整数元；修改后点“确认使用”。');}}
  function readNumber(id){const raw=$(id).value.trim();if(raw==='')throw Error('请填写范围，0也是有效数值');return Number(raw);}
  function apply(){
   try{const g=api.getGame();if(!canApply(g))throw Error('只能在本局选箱前应用数值；房间中请先等待同步');const min=readNumber('modeMin'),max=readNumber('modeMax');const values=Array.from(document.querySelectorAll('[data-pool-value]'),n=>{if(n.value.trim()==='')throw Error('请填好全部九个数值');return Number(n.value);});const config=Engine.makePool({mode:g.mode,min,max,values}).config;api.applyConfig(config);remember(config);feedback(role()==='player'?'已发送，等待房主确认数值。':'九个数值已应用并重新打乱。');}catch(e){feedback(e.message,true);}
@@ -62,17 +63,19 @@
   $('modeSetup').hidden=!numeric;$('skipDrink').hidden=mode!=='drink'||g.phase==='ended';$('skipDrink').disabled=!playable()||api.isBusy();
   if(!numeric){$('accept').textContent='接受估值 · 终止追梦 ↗';$('continue').textContent='继续追梦 →';return;}
   $('modeSetupTitle').textContent=mode==='money'?'先定金额范围，再微调九个数':'先定小口数，再自由修改九项';
-  $('modeSetupNote').textContent=mode==='money'?'金额单位为元，只用于娱乐模拟。填范围后自动生成九个数；不满意的数字可直接改，确认后再装箱。':'以“小口数”为游戏标记，范围0至5，0代表不喝。不限时，不劝酒，也可用无酒精饮品替代。';
+  $('modeSetupNote').textContent=mode==='money'?'金额自动四舍五入为整数元。填好范围，点“自动生成并使用”即可装箱；不满意的数字可直接改，再点确认。':'以“小口数”为游戏标记，范围0至5，0代表不喝。点“自动生成并使用”即可装箱；可随时跳过或用无酒精饮品替代。';
   const note=document.querySelector('.mode-drink-note');if(note)note.hidden=mode!=='drink';
   if(configKey(g)!==draftKey){draftKey=configKey(g);const config={mode,min:g.config?.min??0,max:g.config?.max??(mode==='drink'?3:1000),values:(g.gifts||g.pool).map(x=>x.value)};writeDraft(config);feedback(owner()?'数值可逐项修改，选箱前确认即可。':role()==='player'?'稍后开始后可先调整数值；选箱前提交给房主确认。':'本房间配置由房主与操作玩家设置。');}
-  const edit=!api.isBusy()&&(owner()||role()==='player'&&DreamRoom.canPlay()&&g.phase==='select'&&g.selected===null&&g.started===false);
+  const edit=canApply(g);
   for(const n of document.querySelectorAll('#modeSetup input'))n.disabled=!edit;$('generateValues').disabled=!edit;$('applyValues').disabled=!canApply(g);
+  $('generateValues').textContent=g.phase==='select'?'自动生成并使用九个数 ↗':'已开局 · 重置后生成';
+  if(g.phase!=='select')feedback(g.phase==='ended'?'本局已结束，重置本局后可重新生成数字。':'本局数字已锁定；重置本局后可重新生成，当前宝箱不会被修改。');
  }
  root.GameModes={generate,defaults,remembered,remember,decorate,render,canApply,
   init(options){api=options;
    for(const b of document.querySelectorAll('[data-mode]'))b.onclick=()=>switchMode(b.dataset.mode);
-   $('generateValues').onclick=()=>{try{const g=api.getGame();if(!owner()&&!(role()==='player'&&DreamRoom.canPlay()&&g.started===false&&g.phase==='select'))throw Error('当前不能编辑数值');if(api.isBusy())throw Error('请等待动画结束');const config=generate(g.mode,readNumber('modeMin'),readNumber('modeMax'));writeDraft(config);feedback('已生成九个数，可以逐项修改；确认后才会装箱。');}catch(e){feedback(e.message,true);}};
-   $('applyValues').onclick=apply;for(const id of ['modeMin','modeMax'])$(id).oninput=()=>feedback('范围已改，点“自动生成”或同步调整九项，再确认使用。');
+   $('generateValues').onclick=()=>{try{const g=api.getGame();if(!canApply(g))throw Error('只能在选箱前生成，已开局请先重置；联机请等待连接就绪');const previous=Array.from(document.querySelectorAll('[data-pool-value]'),n=>Number(n.value));const config=generate(g.mode,readNumber('modeMin'),readNumber('modeMax'),Math.random,previous);writeDraft(config);api.applyConfig(config);remember(config);feedback((role()==='player'?'九个数已生成，正在同步到房间。':'九个数已生成并装入宝箱，可以开始。')+(config.min===config.max?'范围上下限相同，因此九个数相同。':'不满意可再生成，或逐项修改后确认。'));$('modeValues').scrollIntoView?.({behavior:'smooth',block:'center'});}catch(e){feedback(e.message,true);}};
+   $('applyValues').onclick=apply;for(const id of ['modeMin','modeMax']){$(id).oninput=()=>feedback('范围已改，点“自动生成并使用”，或调整九项后确认。');$(id).onchange=()=>roundInput($(id),api.getGame().mode);}
    document.querySelector('.decision-actions').insertAdjacentHTML('beforeend','<button id="skipDrink" class="secondary" type="button" hidden>本局跳过 · 不喝</button>');$('skipDrink').onclick=()=>{if(playable()&&!api.isBusy())api.dispatch('skip');};
   },openSettings(){if(current?.mode!=='gift')$('modeSetup').scrollIntoView({behavior:'smooth',block:'start'});}
  };
