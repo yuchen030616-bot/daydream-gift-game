@@ -36,7 +36,7 @@
       this.phase = 'open';
       return this.snapshot();
     }
-    open(i) {
+    open(i, manualOffer = false) {
       this._index(i);
       if (this.phase !== 'open' || i === this.selected || this.opened.includes(i)) throw new Error('当前不能打开该箱');
       this.opened.push(i);
@@ -84,8 +84,21 @@
         }
       }
       this.offer = next;
-      this.phase = this.round === 8 ? 'final' : 'offer';
+      this.phase = this.round === 8 ? 'final' : manualOffer ? 'pricing' : 'offer';
+      if(manualOffer) this.offer = null;
       return GIFTS[this.boxes[i]];
+    }
+    setOffer(giftIndex, count = 1) {
+      this._index(giftIndex);
+      if(!Number.isInteger(count) || count < 1 || count > 9999) throw new RangeError('礼物数量须为1至9999的整数');
+      return this.setBundle([{gift:giftIndex,count}]);
+    }
+    setBundle(bundle) {
+      if(this.phase !== 'pricing') throw new Error('当前不能报价');
+      if(!Array.isArray(bundle)||!bundle.length||bundle.length>9) throw new Error('无效礼物组合');
+      const seen=new Set(),items=bundle.map(item=>{this._index(item.gift);if(seen.has(item.gift)||!Number.isInteger(item.count)||item.count<1||item.count>99999999)throw new Error('无效礼物数量');seen.add(item.gift);return{...GIFTS[item.gift],count:item.count};});
+      this.offer={name:items.map(g=>`${g.name} × ${g.count}`).join(' + '),icon:items[0].icon,items,score:items.reduce((n,g)=>n+g.score*g.count,0),issuer:'host'};
+      this.phase='offer';return this.snapshot();
     }
     continue(decisionMs = 0) {
       if (this.phase !== 'offer') throw new Error('当前不能继续');
