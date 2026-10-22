@@ -5,7 +5,7 @@
  if(typeof module!=='undefined'&&module.exports){module.exports={stats,suggestions};return;}
  const $=id=>document.getElementById(id),gifts=()=>DreamEngine.GIFTS;
  let submit,current,prices,lastRound='',lastRole='',picks=[];
- function readPrices(){try{const stored=JSON.parse(localStorage.getItem('daydream.owner-prices'));if(Array.isArray(stored)&&stored.length===9&&stored.every(x=>Number.isInteger(x)&&x>0&&x<=10000000))return stored;}catch{}return gifts().map(g=>g.score);}
+ function readPrices(){try{const stored=JSON.parse(localStorage.getItem('daydream.owner-prices'));if(Array.isArray(stored)&&stored.length===9&&stored.every(x=>Number.isInteger(x)&&x>0&&x<=10000000)){if(localStorage.getItem('daydream.price-update')!=='car1500'){stored[4]=1500;localStorage.setItem('daydream.owner-prices',JSON.stringify(stored));localStorage.setItem('daydream.price-update','car1500');}return stored;}}catch{}return gifts().map(g=>g.score);}
  const money=n=>Math.round(n).toLocaleString('zh-CN')+' 抖币';
  function send(gift,count){if(!current||current.phase!=='pricing'||DreamRoom.role!=='host')return;if(!Number.isInteger(count)||count<1||count>9999){$('draftCost').textContent='数量请填1至9999的整数';return;}submit([{gift,count}]);}
  function draft(){const gift=Number($('quoteGift').value),count=Number($('quoteCount').value);if(!Number.isInteger(count)||count<1||count>9999){$('draftCost').textContent='数量请填1至9999的整数';return; }const cost=prices[gift]*count,s=stats(current,prices);$('draftCost').textContent='这口价：'+money(cost)+(cost>s.mean?' · 高于剩余均值，注意成本':' · 约为均值的 '+Math.round(cost/s.mean*100)+'%');}

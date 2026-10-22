@@ -2,7 +2,7 @@
   'use strict';
   const GIFTS = Object.freeze([
     ['嘉年华', '🎡', 30000], ['飞艇', '🚀', 20000], ['抖音一号', '🛸', 10001],
-    ['邮轮', '🛳️', 6000], ['钻石跑车', '🏎️', 3000], ['热气球', '🎈', 520],
+    ['邮轮', '🛳️', 6000], ['钻石跑车', '🏎️', 1500], ['热气球', '🎈', 520],
     ['比心兔兔', '🐰', 299], ['亲吻', '💋', 99], ['小心心', '💗', 1]
   ].map(([name, icon, score]) => Object.freeze({ name, icon, score })));
   const QUOTE_ROUNDS=Object.freeze([2,4,6,7]);
@@ -32,6 +32,7 @@
       this.previousOfferName = null;
       this.lastDeclinedOffer = null;
       this.comparison = null;
+      this.pricesVersion = 'car1500';
     }
     _index(i) {
       if (!Number.isInteger(i) || i < 0 || i >= this.boxes.length) throw new RangeError('无效箱号');
@@ -157,10 +158,15 @@
     }
     snapshot() {
       const copy = value => value && { ...value, ...(value.items ? { items: value.items.map(item => ({ ...item })) } : {}) };
-      return { boxes: [...this.boxes], selected: this.selected, initialSelected:this.initialSelected,finalChoice:this.finalChoice,opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, cadence:this.cadence,previousOfferName:this.previousOfferName,lastDeclinedOffer:copy(this.lastDeclinedOffer),comparison:this.comparison&&{...this.comparison,alternative:copy(this.comparison.alternative)},offer: copy(this.offer), result: copy(this.result) };
+      return { boxes: [...this.boxes], selected: this.selected, initialSelected:this.initialSelected,finalChoice:this.finalChoice,opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, cadence:this.cadence,previousOfferName:this.previousOfferName,pricesVersion:this.pricesVersion,lastDeclinedOffer:copy(this.lastDeclinedOffer),comparison:this.comparison&&{...this.comparison,alternative:copy(this.comparison.alternative)},offer: copy(this.offer), result: copy(this.result) };
     }
   }
   Engine.GIFTS = GIFTS;
+  Engine.reprice = gift => {
+    if(!gift)return gift;
+    const items=gift.items?.map(item=>({...item,score:GIFTS.find(g=>g.name===item.name)?.score??item.score}));
+    return {...gift,...(items?{items,score:items.reduce((sum,g)=>sum+g.score*g.count,0)}:{score:GIFTS.find(g=>g.name===gift.name)?.score??gift.score})};
+  };
   Engine.QUOTE_ROUNDS=QUOTE_ROUNDS;
   if (typeof module !== 'undefined' && module.exports) module.exports = Engine;
   if (root) root.DreamEngine = Engine;
