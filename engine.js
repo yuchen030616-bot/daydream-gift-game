@@ -25,10 +25,6 @@
       this.result = null;
       this.rejects = 0;
       this.lastDecisionMs = 0;
-      this.counterCount = 0;
-      this.lastCounter = null;
-      this.roundOpeningOffer = 0;
-      this.negotiationLimit = 0;
     }
     _index(i) {
       if (!Number.isInteger(i) || i < 0 || i >= this.boxes.length) throw new RangeError('无效箱号');
@@ -88,44 +84,8 @@
         }
       }
       this.offer = next;
-      this._combine = combine;
-      this.counterCount = 0;
-      this.lastCounter = null;
-      this.roundOpeningOffer = next.score;
-      this._remainingMax = Math.max(...values);
-      // Freeze this round's concession budget before any counteroffer is made.
-      const concession = .22 - Math.min(.08, riskWeight * lowRisk * .16);
-      this.negotiationLimit = Math.min(cap, this._remainingMax,
-        Math.floor(Math.max(next.score * (1 + concession), next.score + 1)));
       this.phase = this.round === 8 ? 'final' : 'offer';
       return GIFTS[this.boxes[i]];
-    }
-    counter(giftIndex, count) {
-      if (this.phase !== 'offer') throw new Error('当前不能还价');
-      if (!Number.isInteger(giftIndex) || giftIndex < 0 || giftIndex >= GIFTS.length) throw new RangeError('无效礼物');
-      if (!Number.isInteger(count) || count < 1 || count > 99) throw new RangeError('数量须为 1 至 99 的整数');
-      if (this.counterCount >= 2) throw new Error('本轮还价次数已用完');
-      const gift = GIFTS[giftIndex];
-      const requested = { name: `${gift.name} × ${count}`, icon: gift.icon,
-        items: [{ ...gift, count }], score: gift.score * count };
-      this.counterCount++;
-      let status;
-      if (requested.score <= this.negotiationLimit && requested.score <= this._remainingMax) {
-        status = 'accepted';
-        this.result = requested;
-        this.phase = 'ended';
-      } else if (requested.score > this._remainingMax) {
-        status = 'rejected';
-      } else {
-        status = 'counter';
-        const fraction = this.counterCount === 1 ? .45 : .75;
-        const target = Math.min(this.negotiationLimit, requested.score - 1,
-          Math.floor(this.roundOpeningOffer + (this.negotiationLimit - this.roundOpeningOffer) * fraction));
-        const proposal = this._combine(Math.max(this.offer.score, target));
-        if (proposal.score > this.offer.score) this.offer = { ...proposal, reason: '谈判让步' };
-      }
-      this.lastCounter = { status, requested };
-      return { status, requested, message: status === 'accepted' ? '成交，这份礼物归你。' : status === 'rejected' ? '要价超出剩余最高礼物，无法成交。' : '这份要价无法成交，这是本轮可让出的新报价。' };
     }
     continue(decisionMs = 0) {
       if (this.phase !== 'offer') throw new Error('当前不能继续');
@@ -152,7 +112,7 @@
     }
     snapshot() {
       const copy = value => value && { ...value, ...(value.items ? { items: value.items.map(item => ({ ...item })) } : {}) };
-      return { boxes: [...this.boxes], selected: this.selected, opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, counterCount: this.counterCount, lastCounter: this.lastCounter && { status: this.lastCounter.status, requested: copy(this.lastCounter.requested) }, offer: copy(this.offer), result: copy(this.result) };
+      return { boxes: [...this.boxes], selected: this.selected, opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, offer: copy(this.offer), result: copy(this.result) };
     }
   }
   Engine.GIFTS = GIFTS;

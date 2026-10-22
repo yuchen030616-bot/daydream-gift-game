@@ -13,34 +13,19 @@ const quips=['嘿嘿，俺掐爪一算，给你「{gift}」！签了吧，俺还
 const smallest=DreamEngine.GIFTS[game.boxes.filter((_,i)=>!game.opened.includes(i)).reduce((a,b)=>DreamEngine.GIFTS[a].score<DreamEngine.GIFTS[b].score?a:b)];
 const riskQuips=[`嘿嘿，万一最后就剩「${smallest.name}」呢？俺这份「{gift}」可是稳稳当当的，要不见好就收？`,`大的你想要，小的你又怕～「{gift}」先落袋，总比最后捧着「${smallest.name}」干瞪眼强吧？`,`别光盯着大奖呀，「${smallest.name}」还在里面等你呢！俺给「{gift}」，这踏实劲儿可得算进去。`];
 if($('bearLine'))$('bearLine').textContent=p==='offer'?(game.offer.reason==='低奖风险'?riskQuips[(game.round-1)%riskQuips.length]:quips[(game.round-1)%quips.length]).replace('{gift}',game.offer.name):p==='ended'?`嘿嘿，成交「${game.result.name}」！俺这买卖做得……咳，祝你开心！`:p==='final'?'哎哟，你居然扛到最后啦！快开箱，俺都替你捏把汗。':p==='open'?'又不收？行行行，继续开！俺倒要看看你能沉住几口气～':'嘿嘿，先挑个箱子吧！俺这算盘，今天可不一定向着你哦。';
-if(game.lastCounter&&p==='offer')$('bearLine').textContent=game.lastCounter.status==='counter'?`想要「${game.lastCounter.requested.name}」？你这小算盘挺响呀！俺再让一点，「${game.offer.name}」，多了可不行。`:`「${game.lastCounter.requested.name}」？俺的蜂蜜罐也经不起这么掏呀！不答应，还是「${game.offer.name}」。`;
-if(game.lastCounter?.status==='accepted'&&p==='ended')$('bearLine').textContent=`哎哟，这价让你谈成了！「${game.result.name}」，俺认啦，这局就这么成交！`;
 $('offerNote').textContent=p==='ended'?'本局最终礼物':p==='offer'?'本轮模拟估值 · 是否终止？':p==='final'?'揭晓你的保留箱，领取最终结果':'每开一箱，收到一份新的礼物估值';
 $('accept').hidden=p!=='offer';$('continue').hidden=p!=='offer';$('reveal').hidden=!['final','ended'].includes(p);$('reveal').textContent=p==='final'?'打开我的梦想箱 ✦':'看看原箱藏着什么';$('history').innerHTML=log.length?log.map(x=>`<li>${x}</li>`).join(''):'<li>梦想档案将在开箱后记录</li>';
-$('counter').hidden=p!=='offer';$('counter').disabled=game.counterCount>=2;$('counter').textContent=game.counterCount>=2?'本轮还价次数已用完':`我想还个价 · 余 ${2-(game.counterCount||0)} 次`;
 }
 async function choose(i){if(busy)return;try{if(game.phase==='select'){game.select(i);tone();render();return}if(game.phase!=='open')return;busy=true;const b=document.querySelector(`[data-box="${i}"]`);b?.classList.add('revealing');document.querySelectorAll('[data-box]').forEach(x=>x.disabled=true);tone();await new Promise(r=>setTimeout(r,550));game.open(i);const g=DreamEngine.GIFTS[game.boxes[i]];log.unshift(`<span>第 ${game.round} 轮 · ${i+1}号箱</span><strong>${g.name}</strong>`);busy=false;offerStarted=Date.now();render();if(game.phase==='offer')$('accept').focus();else $('reveal').focus()}catch(e){busy=false;render();}}
 $('boxes').onclick=e=>{const b=e.target.closest('[data-box]');if(b)choose(Number(b.dataset.box))};
 $('continue').onclick=()=>{game.continue(offerStarted?Date.now()-offerStarted:0);render()};
 $('accept').onclick=()=>{game.accept();render();celebrate();tone(true)};
-$('counter').onclick=()=>{
- if(game.phase!=='offer'||game.counterCount>=2)return;
- show('跟熊二还个价',`<form id="counterForm" class="counter-form"><p class="counter-help">当前熊二报价：${game.offer.name}。本轮还可还价 ${2-game.counterCount} 次；熊二同意即按你的要求成交，并结束本局。</p><label>想要的礼物<select id="counterGift">${DreamEngine.GIFTS.map((g,i)=>`<option value="${i}">${g.name}</option>`).join('')}</select></label><label>礼物数量<input id="counterQty" type="number" inputmode="numeric" min="1" max="99" step="1" value="1" required></label><p id="counterFeedback" aria-live="polite">合理提价有机会成交；开价太高，熊二会拒绝或另报一个价。</p><button id="submitCounter" class="enamel" type="submit">递上条件，听熊二怎么说 ↗</button></form>`);
- $('counterGift').value=String(Math.max(0,DreamEngine.GIFTS.findIndex(g=>g.name===game.offer.items?.[0]?.name)));
- $('counterForm').onsubmit=e=>{e.preventDefault();try{
-  const reply=game.counter(Number($('counterGift').value),Number($('counterQty').value));
-  log.unshift(`<span>第 ${game.round} 轮 · 主播还价</span><strong>${reply.requested.name} · ${reply.status==='accepted'?'成交':reply.status==='counter'?'熊二压价':'未接受'}</strong>`);
-  render();$('modalTitle').textContent=reply.status==='accepted'?'熊二拍板 · 成交！':reply.status==='counter'?'熊二又压了一个价':'熊二摇头 · 这价不行';
-  $('modalBody').innerHTML=`<div class="reveal-gift">${art(reply.requested)}<p>你提出：<strong>${reply.requested.name}</strong></p><p>${$('bearLine').textContent}</p>${reply.status!=='accepted'?`<p class="counter-help">熊二当前可成交：${game.offer.name}<br>本轮剩余还价次数：${2-game.counterCount}，也可接受当前报价或继续开箱。</p>`:''}<button id="returnDecision" class="enamel">${reply.status==='accepted'?'查看成交结果 ✦':'返回谈判桌 →'}</button></div>`;
-  $('returnDecision').onclick=()=>$('modal').close();if(reply.status==='accepted'){celebrate();tone(true)}
- }catch(err){$('counterFeedback').textContent=err.message||'请选择礼物并填写1至99的整数数量。'}};
-};
 $('reveal').onclick=()=>{if(game.phase==='final'){game.reveal();render();celebrate();tone(true)}else{const g=game.reveal();show('原箱揭晓',`<div class="reveal-gift">${art(g)}<h3>${g.name}</h3><p>你已锁定的本局结果：${game.result.name}</p></div>`)}};
 function show(title,body){$('modalTitle').textContent=title;$('modalBody').innerHTML=body;$('modal').showModal()}
 $('closeModal').onclick=()=>$('modal').close();
 $('reset').onclick=()=>{if(busy)return;if(!['select','ended'].includes(game.phase)){show('重新开始这一局？','<p>当前梦想箱与估值将被清空，重新随机分配九份礼物。</p><button id="confirmReset" class="primary">确认重新开局</button>');$('confirmReset').onclick=()=>{$('modal').close();reset()}}else reset()};
 function reset(){game=new DreamEngine();log=[];render()}
-$('rules').onclick=()=>show('梦想家入场指南','<ol><li>先选一个编号箱，作为你的梦想箱。</li><li>逐个打开其他箱子，开出的礼物将被排除。</li><li>每开一箱，系统给出新的礼物估值。</li><li>接受估值即可终止；继续则放弃当次估值。每轮也可以还价两次，选择想要的礼物和数量；熊二同意后立即成交结束，过高要价会被压价或拒绝。</li><li>坚持到最后，揭晓并获得保留箱中的礼物。</li></ol><p>九种礼物每局各一个、随机分配。估值按全部未揭晓礼物的平均梦想分打折，并根据拒绝次数、思考时长和奖池变化调整；小奖概率较高且大小奖差距明显时，也会考虑保底的吸引力降低报价；报价可为两档礼物的组合，最高不超过剩余期望的84%。礼物名称用于娱乐模拟，不自动发送真实礼物。</p>');
+$('rules').onclick=()=>show('梦想家入场指南','<ol><li>先选一个编号箱，作为你的梦想箱。</li><li>逐个打开其他箱子，开出的礼物将被排除。</li><li>每开一箱，系统给出新的礼物估值。</li><li>接受估值即可终止；继续则放弃当次估值。</li><li>坚持到最后，揭晓并获得保留箱中的礼物。</li></ol><p>九种礼物每局各一个、随机分配。估值按全部未揭晓礼物的平均梦想分打折，并根据拒绝次数、思考时长和奖池变化调整；小奖概率较高且大小奖差距明显时，也会考虑保底的吸引力降低报价；报价可为两档礼物的组合，最高不超过剩余期望的84%。礼物名称用于娱乐模拟，不自动发送真实礼物。</p>');
 $('sound').onclick=()=>{muted=!muted;$('sound').textContent=muted?'音效：关':'音效：开';$('sound').setAttribute('aria-pressed',!muted);tone()};
 $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen()}catch{show('全屏提示','<p>当前浏览器暂不支持全屏，可使用 F11 放大游戏画面。</p>')}};
 document.addEventListener('keydown',e=>{if($('modal').open||e.ctrlKey||e.metaKey||e.altKey)return;if(/^[1-9]$/.test(e.key))choose(Number(e.key)-1)});

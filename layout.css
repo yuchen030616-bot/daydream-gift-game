@@ -1,0 +1,32 @@
+/* Gift collection sits between the title and the play area on every screen. */
+.prize-strip{margin:0 0 24px;min-width:0;max-width:100%}
+.prize-strip .panel-heading{padding:18px 20px 12px}
+.prize-strip .panel-heading .eyebrow{margin-bottom:6px}
+.prize-strip .panel-heading h2{justify-content:flex-start;gap:18px;font-size:20px}
+.prize-strip .prizes{display:flex;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;gap:12px;padding:3px 16px 14px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;scrollbar-width:thin;scrollbar-color:#9c9e62 #e7d7a6}
+.prize-strip .prize{flex:1 0 104px;display:flex;flex-direction:column;justify-content:center;min-width:0;min-height:134px;gap:7px;padding:15px 7px 12px;scroll-snap-align:start;position:relative}
+.prize-strip .prize-rank{position:absolute;top:9px;left:9px;font-size:11px}
+.prize-strip .prize-icon,.prize-strip .prize img{width:62px;height:62px;object-fit:contain;min-width:0}
+.prize-strip .prize-name{font-size:14px;flex:0;line-height:1.5;text-align:center;white-space:nowrap}
+.prize-strip .prize-value{font-size:11px}
+.prize-strip .prize-foot{padding:0 12px 13px;font-size:12px;line-height:1.6}
+.game-layout{grid-template-columns:minmax(0,1fr) 250px}
+.box{aspect-ratio:1.6;min-height:128px}
+.decision-actions{max-width:none}
+@media(max-width:950px){.game-layout{grid-template-columns:minmax(0,1fr)}.right-column{grid-column:auto}.box{aspect-ratio:1.5}}
+@media(max-width:768px){
+ .prize-strip{order:2;margin:0 0 22px;border-radius:15px}
+ .prize-strip .panel-heading{padding:17px 16px 10px}
+ .prize-strip .panel-heading .eyebrow{font-size:8px;letter-spacing:1px}
+ .prize-strip .panel-heading h2{font-size:21px;gap:12px}
+ .prize-strip .panel-heading h2 span{font-size:12px}
+ .prize-strip .prizes{gap:10px;padding:4px 12px 15px}
+ .prize-strip .prize{flex:0 0 123px;min-height:154px;gap:7px;padding:17px 7px 12px}
+ .prize-strip .prize-icon,.prize-strip .prize img{width:76px;height:76px}
+ .prize-strip .prize-name{font-size:16px}
+ .prize-strip .prize-value{font-size:12px}
+ .prize-strip .prize-foot{font-size:12px;padding:0 12px 14px}
+ .stage{order:3}.decision{order:4}.right-column{order:5}.footer{order:6}
+ .box{aspect-ratio:auto;min-height:146px}
+ .decision-actions{grid-template-columns:1fr;max-width:none}
+}
