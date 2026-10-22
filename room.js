@@ -8,6 +8,26 @@
   const room={role:'solo',code:'',clients:[],peers:new Map(),rev:0,lastAt:0,lastHost:0,playerId:null,playerSeen:0,pending:null,acks:[],seen:new Set(),id:C.id(),ready:false,working:false,closed:false};
   let adapter,timer,receiveChain=Promise.resolve(),sendChain=Promise.resolve(),heartbeatAt=0,owner=null,cipher,lastBroadcastAt=0,renderKey='';
   const storageKey=code=>'daydream.owner.'+code;
+  const isAlias=value=>typeof value==='string'&&/^[0-9]{4}$/.test(value);
+  let directoryHandle=null,directoryEpoch=0,joining=false,startTicket=0;
+  function closeDirectory(){directoryEpoch++;directoryHandle?.close();directoryHandle=null;}
+  function claimAlias(){
+    if(!window.RoomDirectory||room.role!=='host'||room.closed)return;
+    closeDirectory();const epoch=directoryEpoch,claimOwner=owner,code=room.code;
+    Promise.resolve().then(()=>window.RoomDirectory.claim({code,pub:claimOwner.pub,privateKey:claimOwner.privateKey,...(isAlias(claimOwner.alias)?{alias:claimOwner.alias}:{})},alias=>{
+      if(epoch!==directoryEpoch||room.closed||room.role!=='host'||room.code!==code||!isAlias(alias))return;
+      room.alias=alias;claimOwner.alias=alias;save();update();broadcast();
+    })).then(handle=>{if(epoch!==directoryEpoch||room.closed)handle.close();else directoryHandle=handle;}).catch(()=>{
+      if(epoch===directoryEpoch&&!room.closed){room.alias='';update();note('4位房间码暂未生成，请稍后重新连接；下方主播链接和围观链接仍可使用。');}
+    });
+  }
+  async function resolveAlias(alias){
+    if(!isAlias(alias))throw Error('请输入4位数字房间码，例如 1234。');
+    if(!window.RoomDirectory)throw Error('房间码服务尚未加载，请刷新页面后重试。');
+    const found=await window.RoomDirectory.resolve(alias);
+    if(!found||!C.valid(found.code)||found.alias!==alias)throw Error('未找到这个房间，请确认房主保持页面打开并核对4位房间码。');
+    return found.code;
+  }
   const cleanName=value=>typeof value==='string'?value.replace(/[\u0000-\u001f\u007f-\u009f]/g,'').trim():'';
   const validName=value=>{const name=cleanName(value);return name&&Array.from(name).length<=16?name:'';};
   room.name=validName(store.get('daydream.nickname'))||'';
@@ -46,7 +66,7 @@
   }
   function roster(){return [{name:room.name||'匿名',role:'host'},...Array.from(room.peers,([id,p])=>({name:p.name||'匿名',role:id===room.playerId?'player':'watch'}))];}
   function note(s){$('roomNotice').textContent=s;}
-  function linked(role){const u=new URL('index.html',location.href);u.search='?v=20261023-car1500';u.hash=new URLSearchParams({room:room.code,...(role==='player'?{play:owner.token}:{view:'1'})}).toString();return u.href;}
+  function linked(role){const u=new URL('index.html',location.href);u.search='?v=20261023-room4-start';u.hash=new URLSearchParams({room:room.code,...(isAlias(room.alias)?{code:room.alias}:{}),...(role==='player'?{play:owner.token}:{view:'1'})}).toString();return u.href;}
   function canPlay(){return room.role==='solo'||room.role==='player'&&room.ready&&Date.now()-room.lastHost<24000&&room.playerId===room.id&&!room.pending;}
   function update(){
     document.body.dataset.roomRole=room.role;
@@ -56,11 +76,11 @@
     $('createRoom').hidden=active;$('soloMode').hidden=active;$('joinArea').hidden=active;
     $('leaveRoom').hidden=!active;$('reconnectRoom').hidden=!active;
     $('roomLinkArea').hidden=!host;$('watchLinkArea').hidden=!host;
-    $('roomCode').textContent=active?C.format(room.code):'';
+    $('roomCode').textContent=active?(isAlias(room.alias)?room.alias:host?'生成中…':'等待4位房间码…'):'';
     const online=room.clients.some(c=>c.connected),fresh=Date.now()-room.lastHost<24000;
     $('roomStatus').textContent=!active?'单人模式':host?(online?'房主 · 等待 / 同步中':'房主 · 正在连接'):!online?'网络连接中…':!fresh?'等待房主上线…':room.role==='player'?(room.playerId===room.id?'主播 · 实时同步':room.playerId?'操作席已被使用':'正在加入操作席…'):'围观 · 实时同步';
     $('roomCount').textContent=!active?'':host||room.ready&&fresh?'在线 '+(room.count||1)+' 人（含房主）':'在线人数待同步';
-    $('roomIntro').textContent=!active?'创建房间，把主播操作链接发给主播；其他人输入房间码即可同步围观。':host?'你正在房主观看席。把下方主播链接发给一位主播，房间码可以发给多人围观。':room.role==='player'?'这是主播操作席。你的选箱、开箱和决定会同步给房主及所有围观者。':'你正在围观，开箱、熊二报价和最终结果会实时同步。';
+    $('roomIntro').textContent=!active?'创建房间，把主播操作链接发给主播；其他人输入4位数字房间码即可同步围观。':host?'你正在房主观看席。把下方主播链接发给一位主播，4位数字房间码可以发给多人围观。':room.role==='player'?'这是主播操作席。你的选箱、开箱和决定会同步给房主及所有围观者。':'你正在围观，开箱、熊二报价和最终结果会实时同步。';
     if(host){$('roomLink').value=linked('player');$('watchLink').value=linked('watch');}
     if(active&&Date.now()-room.started>25000&&(!online||!host&&!fresh))note('暂未连上房间。请确认房主保持页面打开，再点“重新连接”；公共联机通道受网络影响，当前进度不会显示为已同步。');
     const nextRenderKey=room.role+':'+canPlay();if(nextRenderKey!==renderKey){renderKey=nextRenderKey;adapter?.render();}
@@ -68,7 +88,7 @@
   function save(){if(room.role!=='host')return;owner.saved=adapter.save();owner.rev=room.rev;owner.expires=Date.now()+86400000;if(!store.set(storageKey(room.code),owner))note('当前浏览器无法保存房间，关闭房主页面后无法恢复本局。');}
   function publish(packet,retain=false){sendChain=sendChain.then(async()=>{if(room.closed)return;const raw=await cipher.seal(packet);for(const client of room.clients)if(client.connected)client.publish(room.topic,raw,{qos:0,retain});}).catch(()=>note('本次同步未发出，正在重试连接。'));return sendChain;}
   function broadcast(){if(room.role!=='host'||room.closed)return;const now=Date.now();for(const[id,p]of room.peers)if(now-p.at>24000)room.peers.delete(id);if(room.playerId&&now-room.playerSeen>24000)room.playerId=null;room.count=1+room.peers.size;room.lastHost=now;
-    lastBroadcastAt=Math.max(now,lastBroadcastAt+1);const data={code:room.code,at:lastBroadcastAt,rev:room.rev,state:adapter.publicState(),playerId:room.playerId,count:room.count,acks:room.acks,members:roster()};
+    lastBroadcastAt=Math.max(now,lastBroadcastAt+1);const data={code:room.code,alias:isAlias(room.alias)?room.alias:null,at:lastBroadcastAt,rev:room.rev,state:adapter.publicState(),playerId:room.playerId,count:room.count,acks:room.acks,members:roster()};
     return C.sign(data,owner.privateKey).then(signed=>publish({type:'state',pub:owner.pub,...signed},true));
   }
   async function hello(){if(room.role==='solo'||!cipher)return;if(room.role==='host')return broadcast();const data={type:'presence',id:room.id,at:Date.now(),role:room.role,name:room.name||'匿名'};return publish({data,auth:room.token?await C.mac(data,room.token):null});}
@@ -78,6 +98,7 @@
       if(room.role==='host')return;
       const d=await C.verify(p,p.pub,room.code);if(!d||d.code!==room.code||Math.abs(now-d.at)>24000||!Number.isInteger(d.rev)||d.rev<room.rev||d.at<=room.lastAt)return;
       const changed=!room.ready||room.rev!==d.rev;room.rev=d.rev;room.lastAt=d.at;room.lastHost=now;room.playerId=d.playerId;room.count=d.count;room.ready=true;
+      if(isAlias(d.alias))room.alias=d.alias;
       room.members=Array.isArray(d.members)?d.members.slice(0,200).map(p=>({name:validName(p?.name)||'匿名',role:p?.role==='host'?'host':p?.role==='player'?'player':'watch'})):[{name:'匿名',role:'host'}];
       if(room.pending&&d.acks?.includes(room.pending.data.id)){room.pending=null;note('已同步。');}
       if(changed)adapter.loadPublic(d.state);update();return;
@@ -113,7 +134,7 @@
     const now=Date.now();
     if(room.role==='host'){
       const lease=store.get('daydream.lease.'+room.code);
-      if(lease&&lease.id!==room.id&&now-lease.at<15000){note('这个房间已在另一个房主页面打开，请关闭重复页面后重连。');room.closed=true;room.clients.forEach(c=>c.end(true));clearInterval(timer);return;}
+      if(lease&&lease.id!==room.id&&now-lease.at<15000){note('这个房间已在另一个房主页面打开，请关闭重复页面后重连。');room.closed=true;closeDirectory();room.clients.forEach(c=>c.end(true));clearInterval(timer);return;}
       store.set('daydream.lease.'+room.code,{id:room.id,at:now});
     }
     if(now-heartbeatAt>7000){heartbeatAt=now;hello();}
@@ -121,8 +142,14 @@
     update();
   }
   async function start(code,token,forceWatch=false){
-    code=C.normalize(code);if(!C.valid(code))throw Error('房间码为12位字母和数字，可包含分隔横线');
+    const ticket=++startTicket;
+    code=String(code||'').trim();if(!isAlias(code)&&!C.valid(code))throw Error('房间链接无效，请输入4位数字房间码加入。');
     if(!await ensureName()){note('填写昵称后才能进入房间。');return;}
+    if(ticket!==startTicket)return;
+    if(isAlias(code)){note('正在查找房间…');code=await resolveAlias(code);}
+    if(ticket!==startTicket)return;
+    code=C.normalize(code);
+    closeDirectory();room.alias='';
     const saved=store.get(storageKey(code));owner=!token&&!forceWatch&&saved&&saved.expires>Date.now()?saved:null;
     room.role=owner?'host':token?'player':'watch';room.code=code;room.token=token;room.started=Date.now();
     if(room.role!=='host'){try{const key='daydream.peer.'+code+'.'+room.role;room.id=sessionStorage.getItem(key)||room.id;sessionStorage.setItem(key,room.id);}catch{}}
@@ -133,11 +160,13 @@
     }else adapter.loadPublic({boxes:Array(9).fill(null),opened:[],selected:null,phase:'select',round:0,offer:null,result:null});
     update();connect();tick();timer=setInterval(tick,2000);
     note(room.role==='host'?'房主需保持此页在前台打开。多人联机为试用通道，页面会明确显示掉线状态；未打开的礼物不会发给主播或围观者。':'房间码可多人围观；主播操作权仅由操作链接提供。请保持页面前台打开，等待房主同步。');
+    if(room.role==='host'&&!room.closed)claimAlias();
   }
   async function enter(code,token){if(!await ensureName()){note('填写昵称后才能进入房间。');return;}const u=new URL(location.href);u.hash=new URLSearchParams({room:C.normalize(code),...(token?{play:token}:{view:'1'})});location.href=u.href;location.reload();}
   async function create(){
     if(!await ensureName()){note('填写昵称后才能创建房间。');return;}
-    $('createRoom').disabled=true;try{if(!crypto.subtle)throw Error('当前浏览器不支持安全联机，请更新微信或浏览器');owner=await C.identity();owner.expires=Date.now()+86400000;adapter.reset();owner.saved=adapter.save();owner.rev=0;if(!store.set(storageKey(owner.code),owner))throw Error('请允许此网页保存本地数据后再创建房间');history.replaceState(null,'','#'+new URLSearchParams({room:owner.code}));await start(owner.code);}catch(e){note(e.message);room.role='solo';update();}finally{$('createRoom').disabled=false;}
+    startTicket++;
+    $('createRoom').disabled=true;try{if(!crypto.subtle)throw Error('当前浏览器不支持安全联机，请更新微信或浏览器');owner=await C.identity();owner.expires=Date.now()+86400000;adapter.reset();adapter.prepareRoom?.();owner.saved=adapter.save();owner.rev=0;if(!store.set(storageKey(owner.code),owner))throw Error('请允许此网页保存本地数据后再创建房间');history.replaceState(null,'','#'+new URLSearchParams({room:owner.code}));await start(owner.code);}catch(e){closeDirectory();room.closed=true;room.clients.forEach(c=>c.end(true));room.clients=[];clearInterval(timer);note(e.message);room.role='solo';update();}finally{$('createRoom').disabled=false;}
   }
   async function copy(input){input.select();try{await navigator.clipboard.writeText(input.value);note('已复制，可以粘贴发送。');}catch{try{if(!document.execCommand('copy'))throw Error();note('已复制，可以粘贴发送。');}catch{note('请长按上面的链接，选择复制。');}}}
   window.DreamRoom={
@@ -148,12 +177,12 @@
     init(a){adapter=a;
       nameUI();
       $('createRoom').onclick=create;$('soloMode').onclick=()=>{$('roomPanel').hidden=true;};
-      $('joinRoom').onclick=()=>{const code=$('joinCode').value;if(!C.valid(code)){note('请输入完整的12位房间码，例如 XXXX-XXXX-XXXX。');return;}enter(code);};
+      $('joinRoom').onclick=async()=>{if(joining)return;const alias=$('joinCode').value.trim();if(!isAlias(alias)){note('请输入4位数字房间码，例如 1234。');return;}if(!await ensureName()){note('填写昵称后才能进入房间。');return;}if(joining)return;const ticket=++startTicket;joining=true;$('joinRoom').disabled=true;$('createRoom').disabled=true;try{note('正在查找房间…');const code=await resolveAlias(alias);if(ticket===startTicket)await enter(code);}catch(e){if(ticket===startTicket)note(e.message||'查找房间失败，请稍后再试。');}finally{joining=false;$('joinRoom').disabled=false;$('createRoom').disabled=false;}};
       $('joinCode').onkeydown=e=>{if(e.key==='Enter')$('joinRoom').click()};
       $('copyPlayer').onclick=()=>copy($('roomLink'));$('copyWatch').onclick=()=>copy($('watchLink'));
-      $('leaveRoom').onclick=()=>{if(confirm('离开房间？房主离开后，其他人将暂停同步。')){if(room.role==='host')store.set('daydream.lease.'+room.code,null);location.href=location.pathname+'?v=20261023-car1500';}};
+      $('leaveRoom').onclick=()=>{if(confirm('离开房间？房主离开后，其他人将暂停同步。')){closeDirectory();if(room.role==='host')store.set('daydream.lease.'+room.code,null);location.href=location.pathname+'?v=20261023-room4-start';}};
       $('reconnectRoom').onclick=()=>location.reload();
-      window.addEventListener('pagehide',()=>{if(room.role==='host')store.set('daydream.lease.'+room.code,null);room.clients.forEach(c=>c.end(true));});
+      window.addEventListener('pagehide',()=>{startTicket++;closeDirectory();if(room.role==='host')store.set('daydream.lease.'+room.code,null);room.clients.forEach(c=>c.end(true));});
       document.addEventListener('visibilitychange',()=>{if(!document.hidden)hello();});
       const params=new URLSearchParams(location.hash.slice(1));if(params.get('room'))start(params.get('room'),params.get('play'),params.get('view')==='1').catch(e=>{room.role='watch';update();note(e.message);});else update();
     }

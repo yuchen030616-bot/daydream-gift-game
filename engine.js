@@ -10,6 +10,7 @@
     constructor(rng = Math.random) {
       if (typeof rng !== 'function') throw new TypeError('随机源必须为函数');
       this.rng = rng;
+      this.gameId = typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
       this.gifts = GIFTS;
       this.boxes = GIFTS.map((_, i) => i);
       for (let i = this.boxes.length - 1; i > 0; i--) {
@@ -19,6 +20,7 @@
         [this.boxes[i], this.boxes[j]] = [this.boxes[j], this.boxes[i]];
       }
       this.selected = null;
+      this.started = true;
       this.initialSelected = null;
       this.finalChoice = null;
       this.opened = [];
@@ -39,10 +41,16 @@
     }
     select(i) {
       this._index(i);
+      if(this.started===false)throw new Error('请先点击开始游戏');
       if (this.phase !== 'select') throw new Error('当前不能选箱');
       this.selected = i;
       this.initialSelected = i;
       this.phase = 'open';
+      return this.snapshot();
+    }
+    start() {
+      if(this.phase!=='select'||this.started!==false)throw new Error('当前无需开始游戏');
+      this.started=true;
       return this.snapshot();
     }
     open(i, manualOffer = false) {
@@ -158,7 +166,7 @@
     }
     snapshot() {
       const copy = value => value && { ...value, ...(value.items ? { items: value.items.map(item => ({ ...item })) } : {}) };
-      return { boxes: [...this.boxes], selected: this.selected, initialSelected:this.initialSelected,finalChoice:this.finalChoice,opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, cadence:this.cadence,previousOfferName:this.previousOfferName,pricesVersion:this.pricesVersion,lastDeclinedOffer:copy(this.lastDeclinedOffer),comparison:this.comparison&&{...this.comparison,alternative:copy(this.comparison.alternative)},offer: copy(this.offer), result: copy(this.result) };
+      return { boxes: [...this.boxes], gameId:this.gameId, started:this.started, selected: this.selected, initialSelected:this.initialSelected,finalChoice:this.finalChoice,opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, cadence:this.cadence,previousOfferName:this.previousOfferName,pricesVersion:this.pricesVersion,lastDeclinedOffer:copy(this.lastDeclinedOffer),comparison:this.comparison&&{...this.comparison,alternative:copy(this.comparison.alternative)},offer: copy(this.offer), result: copy(this.result) };
     }
   }
   Engine.GIFTS = GIFTS;
