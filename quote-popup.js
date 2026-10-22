@@ -28,7 +28,7 @@
     $('popupAccept').disabled=!allowed();$('popupContinue').disabled=!allowed();
     $('quotePending').textContent=privateMode?'均价与四档候选仅房主可见，点一档即可发出。':!['solo','player'].includes(role())?'等待主播接受，或继续追梦。':canDecide()?'接受即终止本局；继续则放弃本轮报价。':'等待房主同步，连接恢复后即可决定。';
     if(publicMode){$('quoteBearLine').textContent=line;$('quotePopupGift').innerHTML=api.art(game.offer)+`<strong>${game.offer.name}</strong>`;$('quoteAudience').textContent='第 '+(DreamEngine.QUOTE_ROUNDS.indexOf(game.round)+1)+' 次报价 · 已开 '+game.round+' 箱';}
-    if(dismissed||$('modal').open){close();return;}
+    if(dismissed||$('modal').open||$('adminDialog')?.open){close();return;}
     if(privateMode)$('quotePrivate').appendChild($('ownerDesk'));else restoreDesk();
     if(!$('quoteDialog').open)$('quoteDialog').showModal();
     else if(changed)$('closeQuote').focus();

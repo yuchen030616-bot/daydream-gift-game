@@ -35,6 +35,8 @@
       this.lastDeclinedOffer = null;
       this.comparison = null;
       this.pricesVersion = 'car1500';
+      this.directorPreset = null;
+      this.directorLog = [];
     }
     _index(i) {
       if (!Number.isInteger(i) || i < 0 || i >= this.boxes.length) throw new RangeError('无效箱号');
@@ -45,6 +47,7 @@
       if (this.phase !== 'select') throw new Error('当前不能选箱');
       this.selected = i;
       this.initialSelected = i;
+      if(this.directorPreset!==null){this._moveTreasure(this.directorPreset);this.directorPreset=null;}
       this.phase = 'open';
       return this.snapshot();
     }
@@ -110,6 +113,29 @@
       if(manualOffer) this.offer = null;
       return GIFTS[this.boxes[i]];
     }
+    _moveTreasure(giftIndex) {
+      const source=this.boxes.indexOf(giftIndex);
+      if(source<0||this.opened.includes(source))throw new Error('这份礼物已经开出，不能放回藏宝箱');
+      [this.boxes[this.selected],this.boxes[source]]=[this.boxes[source],this.boxes[this.selected]];
+    }
+    setTreasure(giftIndex) {
+      this._index(giftIndex);
+      if(!['select','open','pricing','final'].includes(this.phase))throw new Error('报价已发出或本局已结束，当前不能调整藏宝');
+      const preset=this.selected===null;
+      if(preset){if(this.phase!=='select')throw new Error('当前没有保留箱');this.directorPreset=giftIndex;}
+      else this._moveTreasure(giftIndex);
+      this.directorLog??=[];
+      this.directorLog.push({action:preset?'preset':'treasure',at:Date.now(),box:this.selected,giftIndex});
+      return this.snapshot();
+    }
+    clearTreasurePreset() {
+      if(this.phase!=='select'||this.selected!==null)throw new Error('选箱后不能撤回预设');
+      if(this.directorPreset===null)return this.snapshot();
+      this.directorPreset=null;
+      this.directorLog??=[];
+      this.directorLog.push({action:'clear',at:Date.now(),box:null});
+      return this.snapshot();
+    }
     setOffer(giftIndex, count = 1) {
       this._index(giftIndex);
       if(!Number.isInteger(count) || count < 1 || count > 9999) throw new RangeError('礼物数量须为1至9999的整数');
@@ -166,7 +192,7 @@
     }
     snapshot() {
       const copy = value => value && { ...value, ...(value.items ? { items: value.items.map(item => ({ ...item })) } : {}) };
-      return { boxes: [...this.boxes], gameId:this.gameId, started:this.started, selected: this.selected, initialSelected:this.initialSelected,finalChoice:this.finalChoice,opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, cadence:this.cadence,previousOfferName:this.previousOfferName,pricesVersion:this.pricesVersion,lastDeclinedOffer:copy(this.lastDeclinedOffer),comparison:this.comparison&&{...this.comparison,alternative:copy(this.comparison.alternative)},offer: copy(this.offer), result: copy(this.result) };
+      return { boxes: [...this.boxes], directorPreset:this.directorPreset,directorLog:(this.directorLog||[]).map(e=>({...e})),gameId:this.gameId, started:this.started, selected: this.selected, initialSelected:this.initialSelected,finalChoice:this.finalChoice,opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, cadence:this.cadence,previousOfferName:this.previousOfferName,pricesVersion:this.pricesVersion,lastDeclinedOffer:copy(this.lastDeclinedOffer),comparison:this.comparison&&{...this.comparison,alternative:copy(this.comparison.alternative)},offer: copy(this.offer), result: copy(this.result) };
     }
   }
   Engine.GIFTS = GIFTS;
