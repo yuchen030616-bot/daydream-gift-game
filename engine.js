@@ -176,7 +176,7 @@
       [this.boxes[targetBox],this.boxes[source]]=[this.boxes[source],this.boxes[targetBox]];
     }
     setTreasure(giftIndex, targetBox = this.selected) {
-      if(this.mode!=='gift')throw new Error('仅礼物模式支持设置藏宝');
+      if(this.reshuffleRequest?.status==='pending')throw new Error('洗牌申请等待审批，暂时不能调整藏宝');
       this._index(giftIndex);
       if(!['select','open','pricing','final'].includes(this.phase))throw new Error('报价已发出或本局已结束，当前不能调整藏宝');
       const preset=this.selected===null;
@@ -187,7 +187,7 @@
       return this.snapshot();
     }
     clearTreasurePreset() {
-      if(this.mode!=='gift')throw new Error('仅礼物模式支持设置藏宝');
+      if(this.reshuffleRequest?.status==='pending')throw new Error('洗牌申请等待审批，暂时不能调整藏宝');
       if(this.phase!=='select'||this.selected!==null)throw new Error('选箱后不能撤回预设');
       if(this.directorPreset===null)return this.snapshot();
       this.directorPreset=null;

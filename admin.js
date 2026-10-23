@@ -11,15 +11,23 @@
  const session=()=>until>clock();
  const authorized=()=>session()&&owner();
  const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
- const key=g=>[g.gameId,g.phase,g.round,g.selected,(g.opened||[]).join(','),g.directorLog?.length||0].join(':');
- const availableGifts=g=>DreamEngine.GIFTS.map((_,i)=>i).filter(i=>!g.opened.some(b=>g.boxes[b]===i));
+ const mode=g=>g?.mode||'gift';
+ const pool=g=>g?.gifts||g?.pool||DreamEngine.GIFTS;
+ const numeric=g=>mode(g)!=='gift';
+ const signature=g=>JSON.stringify([mode(g),g?.config?.min??null,g?.config?.max??null,pool(g).map(x=>x.value??x.score)]);
+ const itemName=(g,i)=>pool(g)[i]?.name||'未知项目';
+ const itemLabel=(g,i)=>itemName(g,i)+(numeric(g)?' · 第 '+(i+1)+' 项':'');
+ const presetKey=g=>mode(g)==='gift'?'daydream.admin.next':'daydream.admin.next.'+mode(g);
+ let nextPoolKey='';
+ const key=g=>[g.gameId,g.phase,g.round,g.selected,(g.opened||[]).join(','),g.directorLog?.length||0,signature(g)].join(':');
+ const availableGifts=g=>pool(g).map((_,i)=>i).filter(i=>!g.opened.some(b=>g.boxes[b]===i));
  const availableBoxes=g=>g.boxes.map((_,i)=>i).filter(i=>!g.opened.includes(i));
  function selectedGift(){const raw=$('adminGift').value,n=Number(raw);return raw!==''&&Number.isInteger(n)&&n>=0&&n<9?n:null;}
  function selectedTarget(g){if(g.selected===null)return null;const raw=$('adminTarget').value,n=Number(raw);return raw!==''&&Number.isInteger(n)&&availableBoxes(g).includes(n)?n:null;}
  function randomGift(g){const pool=availableGifts(g);if(!pool.length)return null;const bytes=new Uint8Array(1),limit=256-256%pool.length;do{crypto.getRandomValues(bytes);}while(bytes[0]>=limit);return pool[bytes[0]%pool.length];}
  function refreshChoices(g){
-  const gifts=availableGifts(g),giftKey=gifts.join(','),previous=$('adminGift').value;
-  if(giftKey!==giftPoolKey){$('adminGift').innerHTML='<option value="">请选择礼物，或点随机</option>'+gifts.map(i=>`<option value="${i}">${DreamEngine.GIFTS[i].icon} ${DreamEngine.GIFTS[i].name}</option>`).join('');giftPoolKey=giftKey;}
+  const gifts=availableGifts(g),poolSig=signature(g),giftKey=poolSig+':'+gifts.join(','),previous=giftPoolKey.startsWith(poolSig+':')?$('adminGift').value:'';
+  if(giftKey!==giftPoolKey){$('adminGift').innerHTML='<option value="">请选择项目，或点随机</option>'+gifts.map(i=>`<option value="${i}">${escape(itemLabel(g,i))}</option>`).join('');giftPoolKey=giftKey;}
   $('adminGift').value=previous!==''&&gifts.includes(Number(previous))?previous:'';
   const boxes=availableBoxes(g),targetKey=g.selected+':'+boxes.join(','),target=$('adminTarget').value;
   if(targetKey!==targetPoolKey){$('adminTarget').innerHTML=g.selected===null?'<option value="">主播即将选中的保留箱</option>':boxes.map(i=>`<option value="${i}">${i+1} 号箱 · ${i===g.selected?'主播保留箱':boxes.length===2?'另一只未开箱':'未开箱'}</option>`).join('');$('adminTarget').value=g.selected===null?'':target!==''&&boxes.includes(Number(target))?target:String(g.selected);targetPoolKey=targetKey;}
@@ -28,10 +36,11 @@
  function message(text,error=false){$('adminMessage').textContent=text;$('adminMessage').classList.toggle('is-error',error);}
  function read(name,fallback){try{return JSON.parse(localStorage.getItem(name))??fallback;}catch{return fallback;}}
  function store(name,value){try{localStorage.setItem(name,JSON.stringify(value));return true;}catch{return false;}}
- function nextGift(){const n=read('daydream.admin.next',null);return Number.isInteger(n)&&n>=0&&n<9?n:null;}
+ function nextGift(g=current){const n=read(presetKey(g),null);if(mode(g)==='gift')return Number.isInteger(n)&&n>=0&&n<9?n:null;return n&&n.signature===signature(g)&&Number.isInteger(n.index)&&n.index>=0&&n.index<pool(g).length?n.index:null;}
+ function refreshNext(g){const sig=signature(g);if(nextPoolKey!==sig){$('adminNext').innerHTML='<option value="">随机分配</option>'+pool(g).map((_,i)=>`<option value="${i}">${escape(itemLabel(g,i))}</option>`).join('');const n=nextGift(g);$('adminNext').value=n===null?'':String(n);nextPoolKey=sig;}}
  function audit(action,gift=null,box=null){
   const rows=read('daydream.admin.audit',[]),safe=Array.isArray(rows)?rows:[];
-  safe.unshift({at:Date.now(),action,gift:gift===null?null:DreamEngine.GIFTS[gift].name,box,gameId:current?.gameId||null});
+  safe.unshift({at:Date.now(),action,gift:gift===null?null:itemLabel(current,gift),box,mode:mode(current),gameId:current?.gameId||null});
   store('daydream.admin.audit',safe.slice(0,100));
  }
  function lock(text='已退出管理后台。'){
@@ -67,19 +76,20 @@
   if(api.isBusy())throw Error('正在开箱，请等动画结束再操作');
  }
  function randomize(){
-  try{requireControl();const g=api.getGame(),gift=randomGift(g);if(gift===null)throw Error('没有可选择的未开礼物');cancel();$('adminGift').value=String(gift);preview();message('随机选中「'+DreamEngine.GIFTS[gift].name+'」，确认设置后才会生效。');}catch(e){message(e.message,true);}
+  try{requireControl();const g=api.getGame(),gift=randomGift(g);if(gift===null)throw Error('没有可选择的未开项目');cancel();$('adminGift').value=String(gift);preview();message('随机选中「'+itemLabel(g,gift)+'」，确认设置后才会生效。');}catch(e){message(e.message,true);}
  }
  function stage(action){
   try{
    requireControl();const g=api.getGame(),gift=selectedGift(),target=selectedTarget(g);
    if(action==='treasure'){
     if(!['select','open','pricing','final'].includes(g.phase))throw Error('请等主播继续追梦后再调整，已发出的报价和已结算结果均已锁定');
-    if(gift===null||!availableGifts(g).includes(gift))throw Error('请先选择尚未开出的礼物，或点击随机');
+    if(gift===null||!availableGifts(g).includes(gift))throw Error('请先选择尚未开出的项目，或点击随机');
     if(g.selected!==null&&target===null)throw Error('请选择尚未打开的箱子');
    }
    if(action==='clear'&&(g.selected!==null||g.directorPreset===null))throw Error('当前没有可撤回的选箱前预设');
    confirming={action,gift,target,expected:key(g)};
-   $('adminConfirmationText').textContent=action==='restart'?'重新洗牌并结束当前进度？下一局预设会在本次重开时生效，房间内所有人会同步重置。':action==='clear'?'撤回保留箱预设？本局将按当前随机分配继续，操作记录仍会保留。':g.selected===null?`把主播即将选择的保留箱预设为「${DreamEngine.GIFTS[gift].name}」？具体设置仅你可见。`:`把 ${target+1} 号箱调整为「${DreamEngine.GIFTS[gift].name}」？将与另一只未开箱交换礼物；设置绑定箱号，主播换箱后会拿到新箱子的礼物。`;
+   $('adminConfirmationText').textContent=action==='restart'?'重新洗牌并结束当前进度？同一配置的下一局预设会在本次重开时生效，房间内所有人会同步重置。':action==='clear'?'撤回保留箱预设？本局将按当前随机分配继续，操作记录仍会保留。':g.selected===null?`把主播即将选择的保留箱预设为「${itemLabel(g,gift)}」？具体设置仅你可见。`:`把 ${target+1} 号箱调整为「${itemLabel(g,gift)}」？将与另一只未开箱交换内容；设置绑定箱号，换箱后会拿到新箱子的内容。`;
+   if(numeric(g))$('adminConfirmationText').textContent=$('adminConfirmationText').textContent.replaceAll('交换内容','交换数值').replaceAll('新箱子的内容','新箱子的数值');
    $('adminConfirmation').hidden=false;message('请核对下面的操作，再确认执行。');$('adminConfirm').focus();
   }catch(e){message(e.message,true);}
  }
@@ -92,11 +102,10 @@
    audit(task.action,task.action==='treasure'?task.gift:null,task.target);message(task.action==='restart'?'已重新开局。':'已生效，具体配置仅本机可见。');render(api.getGame());
   }catch(e){cancel();message(e.message,true);render(api.getGame());}
  }
- function preview(){const i=selectedGift(),valid=i!==null&&current&&availableGifts(current).includes(i);$('adminGiftImage').hidden=!valid;if(valid){const g=DreamEngine.GIFTS[i];$('adminGiftImage').src='assets/'+images[i];$('adminGiftName').textContent=g.name;$('adminGiftPrice').textContent=g.score.toLocaleString('zh-CN')+' 抖币';}else{$('adminGiftName').textContent='尚未选择礼物';$('adminGiftPrice').textContent='手动选择，或点击随机';}$('adminApply').disabled=!valid||!authorized()||api.isBusy()||!['select','open','pricing','final'].includes(current?.phase)||(current.selected!==null&&selectedTarget(current)===null);}
+ function preview(){const i=selectedGift(),valid=i!==null&&current&&availableGifts(current).includes(i),isNumeric=numeric(current);$('adminGiftImage').hidden=!valid||isNumeric;if(valid){const gift=pool(current)[i];if(!isNumeric)$('adminGiftImage').src='assets/'+images[i];$('adminGiftName').textContent=itemLabel(current,i);$('adminGiftPrice').textContent=isNumeric?(mode(current)==='drink'?'小口数仅作标记，可跳过或用水替代':'金额仅作娱乐模拟'):gift.score.toLocaleString('zh-CN')+' 抖币';}else{$('adminGiftName').textContent=isNumeric?'尚未选择数值':'尚未选择礼物';$('adminGiftPrice').textContent='手动选择，或点击随机';}$('adminApply').disabled=!valid||!authorized()||api.isBusy()||!['select','open','pricing','final'].includes(current?.phase)||(current.selected!==null&&selectedTarget(current)===null);}
  function tab(name){activeTab=name;for(const b of document.querySelectorAll('[data-admin-tab]'))b.setAttribute('aria-selected',b.dataset.adminTab===name);for(const p of document.querySelectorAll('[data-admin-page]'))p.hidden=p.dataset.adminPage!==name;}
  function render(g){
   if(!api)return;current=g;
-  if(g.mode&&g.mode!=='gift'){if($('adminDialog').open)$('adminDialog').close();until=0;confirming=null;peek=false;return;}
   if(lastRole&&lastRole!==role()){until=0;peek=false;cancel();}lastRole=role();
   if(g.gameId!==lastGame){peek=false;cancel();giftPoolKey='';targetPoolKey='';$('adminGift').value='';$('adminTarget').value='';lastGame=g.gameId;}
   const valid=session();$('adminLogin').hidden=valid;$('adminConsole').hidden=!valid;$('adminLogout').hidden=!valid;$('adminDialog').classList.toggle('is-locked',!valid);
@@ -105,25 +114,29 @@
   $('adminNoAuthority').hidden=owner();$('adminControls').hidden=!owner();if(!owner())return;
   if(confirming&&key(g)!==confirming.expected){cancel();message('对局已更新，未执行的操作已取消，请重新确认。',true);}
   $('adminPhase').textContent=phases[g.phase]||'同步中';$('adminRound').textContent=g.opened.length+' / 7';$('adminReserve').textContent=g.selected===null?'等待选箱':String(g.selected+1).padStart(2,'0')+' 号箱';
-  const n=nextGift();$('adminNextStatus').textContent=n===null?'下一局：随机分配':'下一局：保留箱预设为 '+DreamEngine.GIFTS[n].name;
+  refreshNext(g);const n=nextGift(g);$('adminNextStatus').textContent=n===null?'下一局：随机分配':'下一局：保留箱预设为 '+itemLabel(g,n);
   const allowed=['select','open','pricing','final'].includes(g.phase)&&!api.isBusy();
   $('adminApply').disabled=!allowed;$('adminClear').disabled=g.phase!=='select'||g.directorPreset===null||api.isBusy();$('adminRestart').disabled=api.isBusy();
   $('adminTreasureHint').textContent=g.phase==='offer'?'报价已发出，藏宝暂时锁定。等主播选择继续后可调整。':g.phase==='ended'?'结果已结算，不能改写。可设置下一局或重新开局。':g.selected===null?'选箱前设置：主播选中的那只保留箱将放入指定礼物。':availableBoxes(g).length===2?'最后两只箱都能设置。先选箱号，再选礼物；设置绑定箱号，主播换箱后拿新箱子的礼物。':'先选择要设置的未开箱，再选择礼物。已开礼物已排除，已开箱保持原样。';
   refreshChoices(g);
+  for(const label of document.querySelectorAll('label[for=adminGift],label[for=adminNext]'))label.textContent=numeric(g)?(label.htmlFor==='adminNext'?'下一局保留箱数值':'这只箱子的数值'):(label.htmlFor==='adminNext'?'下一局保留箱礼物':'这只箱子的礼物');
+  const choiceHint=document.querySelector('.admin-choice-hint');if(choiceHint)choiceHint.textContent=numeric(g)?'仅从尚未开出的现有数值抽选；重复值按第几项区分，确认后才交换。':'仅从未开出的礼物抽选；确认设置后才生效。';
+  const disclosure=document.querySelector('.admin-disclosure p');if(disclosure)disclosure.textContent=numeric(g)?'换箱后领取新箱内数值；只交换未开项目，已发报价与结算结果不能修改。具体设置与操作记录仅本机可见。'+(mode(g)==='drink'?'仅限成年人自愿，可跳过或用水替代。':'金额仅作娱乐模拟。'):'主播换箱后领取新箱内的礼物；已开出的礼物不能恢复，发出报价期间不能改，结算结果不能重写。具体设置和操作记录仅本机可见。';
+  if(numeric(g))$('adminTreasureHint').textContent=$('adminTreasureHint').textContent.replaceAll('指定礼物','所选数值').replaceAll('再选礼物','再选数值').replaceAll('选择礼物','选择数值').replaceAll('已开礼物','已开数值').replaceAll('箱子的礼物','箱子的数值').replaceAll('新箱子的礼物','新箱子的数值')+' 只交换尚未开出的现有数值，不改变数值大小。'+(mode(g)==='drink'?'成年人自愿，可跳过或用水替代。':'金额仅供娱乐模拟。');
   preview();
   $('adminPeek').textContent=peek?'收起藏宝信息':'查看所选箱藏宝';
   $('adminSecret').hidden=!peek;
-  if(peek){const target=selectedTarget(g);$('adminSecret').textContent=g.selected!==null&&target!==null?`${target+1} 号箱当前藏着：`+DreamEngine.GIFTS[g.boxes[target]].name:g.directorPreset!==null?'已设预选礼物：'+DreamEngine.GIFTS[g.directorPreset].name:'未设预选，九箱随机分配。';}
-  const logs=g.directorLog||[];$('adminCurrentLog').innerHTML=logs.length?logs.slice().reverse().map(e=>`<li><time>${escape(new Date(e.at).toLocaleTimeString('zh-CN'))}</time><strong>${e.action==='clear'?'撤回预设':e.action==='preset'?'保留箱预设':`调整 ${e.box+1} 号箱`}</strong><span>${e.giftIndex===undefined?'恢复随机分配':escape(DreamEngine.GIFTS[e.giftIndex]?.name||'未知礼物')}</span></li>`).join(''):'<li>本局尚未使用藏宝设置。</li>';
+  if(peek){const target=selectedTarget(g);$('adminSecret').textContent=g.selected!==null&&target!==null?`${target+1} 号箱当前藏着：`+itemLabel(g,g.boxes[target]):g.directorPreset!==null?'已设预选项目：'+itemLabel(g,g.directorPreset):'未设预选，九箱随机分配。';}
+  const logs=g.directorLog||[];$('adminCurrentLog').innerHTML=logs.length?logs.slice().reverse().map(e=>`<li><time>${escape(new Date(e.at).toLocaleTimeString('zh-CN'))}</time><strong>${e.action==='clear'?'撤回预设':e.action==='preset'?'保留箱预设':`调整 ${e.box+1} 号箱`}</strong><span>${e.giftIndex===undefined?'恢复随机分配':escape(itemLabel(g,e.giftIndex))}</span></li>`).join(''):'<li>本局尚未使用藏宝设置。</li>';
   const rows=read('daydream.admin.audit',[]);$('adminAudit').innerHTML=Array.isArray(rows)&&rows.length?rows.slice(0,15).map(e=>`<li><time>${escape(new Date(e.at).toLocaleString('zh-CN'))}</time><span>${escape(({treasure:'设置本局藏宝',clear:'撤回本局预设',restart:'重新开局',next:'保存下一局预设',random:'取消下一局预设'})[e.action]||'管理操作')}${Number.isInteger(e.box)?' · '+(e.box+1)+'号箱':''}${e.gift?' · '+escape(e.gift):''}</span></li>`).join(''):'<li>本设备暂时没有管理记录。</li>';
   tab(activeTab);
  }
  window.AdminDesk={
   authorized,
   prepare(g){
-   if(!owner()||g.mode&&g.mode!=='gift')return;const gift=nextGift();if(gift===null)return;
+   if(!owner())return;const gift=nextGift(g);if(gift===null)return;
    // Consume a one-round preset only when it can actually be removed from storage.
-   if(!store('daydream.admin.next',null))return;g.setTreasure(gift);
+   if(!store(presetKey(g),null))return;g.setTreasure(gift);
   },
   init(options){api=options;
    // Public rules are constant for every round; private administrator actions stay local.
@@ -134,8 +147,8 @@
    $('adminTarget').onchange=()=>{cancel();peek=false;render(api.getGame());};
    $('adminRandom').onclick=randomize;$('adminApply').onclick=()=>stage('treasure');$('adminClear').onclick=()=>stage('clear');$('adminRestart').onclick=()=>stage('restart');$('adminConfirm').onclick=execute;$('adminCancel').onclick=cancel;
    $('adminPeek').onclick=()=>{if(!authorized())return;peek=!peek;render(api.getGame());};
-   $('adminNext').value=nextGift()===null?'':String(nextGift());
-   $('adminSaveNext').onclick=()=>{try{requireControl();const raw=$('adminNext').value,gift=raw===''?null:Number(raw);if(gift!==null&&(!Number.isInteger(gift)||gift<0||gift>8))throw Error('请选择有效礼物');if(!store('daydream.admin.next',gift))throw Error('浏览器未能保存，请允许本地存储后再试');audit(gift===null?'random':'next',gift);message('已保存，下次重开时生效一次。');render(api.getGame());}catch(e){message(e.message,true);}};
+   $('adminNext').value='';
+   $('adminSaveNext').onclick=()=>{try{requireControl();const g=api.getGame(),raw=$('adminNext').value,gift=raw===''?null:Number(raw);if(gift!==null&&(!Number.isInteger(gift)||gift<0||gift>=pool(g).length))throw Error('请选择有效项目');if(!store(presetKey(g),gift===null?null:mode(g)==='gift'?gift:{index:gift,signature:signature(g)}))throw Error('浏览器未能保存，请允许本地存储后再试');audit(gift===null?'random':'next',gift);message('已保存，仅同一配置的下一次重开生效一次。');render(g);}catch(e){message(e.message,true);}};
    for(const b of document.querySelectorAll('[data-admin-tab]'))b.onclick=()=>{cancel();tab(b.dataset.adminTab);};
    setInterval(()=>{if(until&&!session())lock('登录已超过15分钟，请重新输入密码。');},1000);
   },render

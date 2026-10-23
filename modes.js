@@ -50,8 +50,8 @@
   if($('topDream'))$('topDream').textContent=numeric?Math.max(...pool.map(x=>x.value))+' '+unit(mode):'嘉年华';
   if($('topDreamLabel'))$('topDreamLabel').textContent=drink?'本局数值上限':numeric?'本局最高金额':'本场终极梦想';
   if($('collectionTitle'))$('collectionTitle').textContent=drink?'轻饮数值册':numeric?'九档梦想金额':'梦想礼物册';
-  if($('adminEntry'))$('adminEntry').hidden=numeric;
-  const rule=document.querySelector('.room-config-rule');if(rule)rule.textContent=numeric?(drink?'小口数为自愿互动标记，可随时跳过或用水替代；配置由房主与玩家在开始前确认。':'本局金额仅作娱乐模拟，不自动转账。数值由房主与玩家在开始前确认，换箱领取新箱内金额。'):'游戏规则：礼物可由房主预设或调整，不保证随机结果。换箱后领取新箱内礼物。';
+  if($('adminEntry'))$('adminEntry').hidden=false;
+  const rule=document.querySelector('.room-config-rule');if(rule)rule.textContent=numeric?(drink?'小口数为自愿互动标记，可随时跳过或用水替代；未开箱数值可由房主调整，换箱领取新箱内方案。':'本局金额仅作娱乐模拟，不自动转账。未开箱金额可由房主调整，不保证随机结果；换箱领取新箱内金额。'):'游戏规则：礼物可由房主预设或调整，不保证随机结果。换箱后领取新箱内礼物。';
   if(!numeric)return;
   if($('bearLine'))$('bearLine').textContent=g.phase==='offer'?(drink?'这份方案是「'+g.offer.name+'」。自愿参与，随时可以跳过或用无酒精饮品替代。':'俺掐爪一算，这口价「'+g.offer.name+'」！收下稳稳当当，继续就看你的手气啦。'):g.phase==='ended'?(drink?'本局结果「'+g.result.name+'」。按你舒服的方式参与，跳过也没关系。':'成交「'+g.result.name+'」！这份梦想，先替你收好啦。'):drink?'按自己的节奏玩，随时可跳过，不劝酒。':'嘿嘿，九个金额已经装箱，先选一只属于你的梦想箱。';
   if($('offerNote'))$('offerNote').textContent=g.phase==='ended'?'本局最终'+(drink?'方案':'金额'):g.phase==='pricing'?'等待房主给出'+(drink?'自愿方案':'金额报价'):drink?'口数为游戏标记，不规定饮用容量；可直接跳过。':'金额仅作娱乐模拟，不触发转账或支付。';
