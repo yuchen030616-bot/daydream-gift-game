@@ -50,7 +50,7 @@
    if(loaded!==key(g)&&g.poolProposal?.config){saveDraft();window.GameModes.setDraft(g.poolProposal.config);loaded=key(g);}
    controls();return;
   }
-  if(role()==='host'&&pending(g)&&dismissed!==key(g))open();
+  if(role()==='host'&&pending(g)&&dismissed!==key(g)&&!(window.MobilePages?.enabled()&&window.MobilePages.page==='room'))open();
  }
  function intercept(configuration){
   if(!dialog?.open||!marker)return false;

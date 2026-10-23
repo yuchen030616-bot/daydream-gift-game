@@ -54,3 +54,6 @@ body.mobile-paged{height:100vh;height:100dvh;min-height:0;overflow:hidden!import
  body.mobile-paged #mobileRoleHint[hidden]{display:none!important}
 }
 #modalBody>button[id^="switchEdition"]{display:block;width:100%;min-height:48px;margin:11px 0;padding:12px;font-size:15px;flex:none}#modalBody>button[id^="switchEdition"]:disabled{opacity:.5;cursor:default}
+@media(max-width:768px){body.mobile-paged #mobileSettingsNextPlayer{width:100%;min-height:46px;flex:none;margin:12px 0;padding:10px;font-size:14px}body.mobile-paged #mobileSettingsNextPlayer[hidden]{display:none!important}}
+@media(max-width:768px){body.mobile-paged #roomEnterGame{display:block;width:100%;height:48px;min-height:48px;flex:none;margin:12px 0;padding:10px;font-size:15px}}
+@media(max-width:768px){body.mobile-paged #roomModeFlow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}body.mobile-paged #roomModeFlow button{width:100%;min-width:0;height:48px;min-height:48px;flex:none;margin:0;padding:9px 5px;font-size:14px;line-height:1.5}}

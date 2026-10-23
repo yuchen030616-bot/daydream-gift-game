@@ -3,7 +3,7 @@
  const $=id=>document.getElementById(id);
  let dispatch,current,dismissed=false;
  const player=()=>window.DreamRoom?.role==='player';
- function show(){if(!player()||current?.started!==false||dismissed||document.querySelector('dialog[open]'))return;$('playerStartDialog').showModal();}
+ function show(){if(!player()||current?.started!==false||dismissed||window.MobilePages?.enabled()&&window.MobilePages.page==='room'||document.querySelector('dialog[open]'))return;$('playerStartDialog').showModal();}
  function render(game){
   const justStarted=player()&&current?.started===false&&game.started===true;
   if(game.gameId?game.gameId!==current?.gameId:game!==current)dismissed=false;

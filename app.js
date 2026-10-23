@@ -44,6 +44,7 @@ window.OwnerDesk?.render(game);
 window.QuotePopup?.render(game,$('bearLine').textContent);
 window.CounterOffer?.render(game);
 window.ReshufflePrompt?.render(game);
+window.SeatSwitch?.render(game);
 window.Showtime?.render(game);
 window.PlayerStart?.render(game);
 window.AdminDesk?.render(game);
@@ -224,6 +225,7 @@ window.NumericStart?.init({getGame:()=>game,isBusy:()=>busy||shuffling()||reshuf
  approve:confirmNumericPool,
  reject:id=>{if(window.DreamRoom?.role!=='host'||busy||shuffling()||DreamRoom.connected===false)throw Error('只有在线房主可退回方案');game.decidePoolProposal(id,null);render();DreamRoom.changed();return true;}
 });
+window.SeatSwitch?.init({getGame:()=>game});
 window.MobilePages?.init({getGame:()=>game});
 render();
 window.OwnerDesk?.init(bundle=>{if(!window.DreamRoom||DreamRoom.role!=='host'||game.phase!=='pricing'||reshuffleWaiting())return;if(game.mode==='gift')game.setBundle(bundle);else game.setNumericOffer(bundle.value);offerStarted=Date.now();render();DreamRoom.changed();});

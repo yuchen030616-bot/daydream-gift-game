@@ -2,7 +2,7 @@
 (function(){
  'use strict';
  const $=id=>document.getElementById(id),names={game:'游戏',room:'邀请房间',deal:'本轮报价',result:'本局结算',collection:'梦想礼物册',record:'追梦记录',settings:'设置',banter:'互动放话'};
- let api,current,page='room',lastGame='',lastPhase='',lastMode='',lastEvent='',ready=false,media,moved=[];
+ let api,current,page='room',lastGame='',lastPhase='',lastMode='',lastEvent='',lastRole='',ready=false,media,moved=[],lobbyFirst=true;
  const enabled=()=>ready&&!!media?.matches;
  const role=()=>window.DreamRoom?.role||'solo';
  function groups(){
@@ -26,7 +26,9 @@
   for(const button of document.querySelectorAll('#mobileMenuDialog [data-mobile-page]')){button.disabled=button.dataset.mobilePage==='result'&&current?.phase!=='ended';button.setAttribute('aria-current',button.dataset.mobilePage===page?'page':'false');}
   for(const [target,source]of [['mobileMenuCounter','reconsiderQuote'],['mobileMenuReshuffle','askReshuffle'],['mobileMenuStart','openNumericStart']]){const original=source==='openNumericStart'&&(!$(source)||$(source).hidden)?$('readyPlayer'):$(source);$(target).hidden=!original||original.hidden;$(target).disabled=!original||original.disabled;$(target).textContent=original?.textContent||'';}
   const selected=current?.selected;$('mobileRoundInfo').textContent=selected==null?'先留下你的一只梦想箱':`保留 ${String(selected+1).padStart(2,'0')} 号 · 已开 ${current.round||0} / 7 箱`;
-  const observer=role()==='watch';$('mobileRoleHint').hidden=!observer;$('mobileRoleHint').textContent='当前是围观席 · 只能看。开始游戏请使用房主发出的主播操作链接。';
+  const observer=role()==='watch';$('mobileRoleHint').hidden=!observer;$('mobileRoleHint').textContent='当前为围观席 · 可在本局结束后申请下一局开箱，房主同意后自动切换。';
+  if(observer&&current?.phase==='ended')$('mobileRoleHint').textContent='本局已结束。可在结算页申请下一局开箱，房主同意后自动切换席位。';
+  $('mobileMenuNextPlayer').hidden=role()==='solo'||current?.phase!=='ended';$('mobileSettingsNextPlayer').hidden=role()==='solo';
   $('mobileModeHint').textContent=['host','solo'].includes(role())?'切换主播版、普通版或喝酒版':'当前为'+(role()==='player'?'主播操作席':'围观席')+'，游戏模式由房主更换。';
   const numeric=current?.mode==='money'||current?.mode==='drink';$('mobileSetupSummary').textContent=numeric?(role()==='host'?'玩家点击开始后先提交九项数值，你可修改并最终确认；确认后双方直接洗牌。':'点击开始后，在弹窗选好九项数值；房主确认后直接洗牌进入游戏。'):'主播版使用九款梦想礼物，开箱、报价与结算都会自动切换。';$('mobileSettingsStart').hidden=!numeric||!$('openNumericStart')||$('openNumericStart').hidden;$('mobileSettingsStart').disabled=$('openNumericStart')?.disabled??true;
   $('mobileQuickQuote').textContent=['pricing','offer'].includes(current?.phase)?'查看本轮报价':'等待下一口价';
@@ -34,12 +36,14 @@
   groups();
  }
  function set(view){if(!names[view])return false;page=view;refresh();return true;}
- function focus(view){if(!enabled())return false;if(view==='result'&&current?.phase!=='ended')return false;set(view);if($('mobileMenuDialog').open)$('mobileMenuDialog').close();return true;}
+ function focus(view){if(!enabled())return false;if(view==='result'&&current?.phase!=='ended')return false;if(lobbyFirst&&['game','deal','result'].includes(view))return true;set(view);if($('mobileMenuDialog').open)$('mobileMenuDialog').close();return true;}
  function go(view){
   if(!ready||!names[view]||current?.stageEvent?.kind==='shuffle'&&current.stageEvent.active||view==='result'&&current?.phase!=='ended')return false;
-  set(view);window.QuotePopup?.pause();if($('mobileMenuDialog').open)$('mobileMenuDialog').close();
+  if(['game','deal','result'].includes(view))lobbyFirst=false;set(view);window.QuotePopup?.pause();if($('mobileMenuDialog').open)$('mobileMenuDialog').close();
   if(view==='room')$('roomPanel').hidden=false;
   if(view==='deal'&&!$('viewQuote').hidden)$('viewQuote').click();
+  if(view==='result')$('viewResult')?.click();
+  if(enabled()&&view==='game'&&current){window.PlayerStart?.render(current);window.NumericStart?.render(current);}
   if(!enabled()){
    if(view==='settings'&&window.GameModes?.openSwitcher){window.GameModes.openSwitcher();return true;}
    const target={room:'#roomPanel',game:current?.phase==='final'?'#finalShowdown':'.stage',deal:'.decision',result:'#settlement',collection:'.prize-panel',record:'.right-column',settings:current?.mode!=='gift'?'#modeSetup':'.tools',banter:'#theatreControls'}[view];
@@ -52,22 +56,27 @@
   window.QuotePopup?.pause();if(document.querySelector('dialog[open]:not(#mobileMenuDialog)'))return;refresh();$('mobileMenuDialog').showModal();$('mobileCloseMenu').focus();
  }
  function render(game){
-  if(!ready||!game)return;current=game;const newGame=game.gameId!==lastGame,changed=game.phase!==lastPhase,newMode=(game.mode||'gift')!==lastMode;
+  if(!ready||!game)return;current=game;const newGame=game.gameId!==lastGame,changed=game.phase!==lastPhase,newMode=(game.mode||'gift')!==lastMode,promoted=lastRole==='watch'&&role()==='player';
   if(enabled()){
    const event=game.stageEvent,shuffle=event?.kind==='shuffle'&&event.active&&event.id!==lastEvent;
    let target=null;
-   if(shuffle)target='game';
+   if(shuffle||promoted){lobbyFirst=false;target='game';}
+   else if(lobbyFirst)target='room';
    else if(newGame||changed){if(game.phase==='ended')target='result';else if(['pricing','offer'].includes(game.phase))target='deal';else if(newMode&&lastMode&&(game.mode||'gift')!=='gift'&&game.phase==='select')target='game';else if(!lastGame&&role()==='solo')target='room';else if(!(page==='settings'&&game.phase==='select'&&!newMode))target='game';}
    if(target){set(target);if($('mobileMenuDialog').open)$('mobileMenuDialog').close();}
    if(shuffle)lastEvent=event.id;
   }
-  lastGame=game.gameId;lastPhase=game.phase;lastMode=game.mode||'gift';refresh();
+  lastGame=game.gameId;lastPhase=game.phase;lastMode=game.mode||'gift';lastRole=role();refresh();
  }
  window.MobilePages={enabled,focus,go,render,get page(){return page},init(options){
   if(ready)return;api=options;media=matchMedia('(max-width:768px)');
   document.querySelector('.brand').insertAdjacentHTML('afterend','<strong id="mobilePageTitle" class="mobile-only">游戏</strong>');
   document.querySelector('.app').insertAdjacentHTML('beforeend','<section id="mobileUtility" class="panel mobile-only"><h2>游戏设置</h2><p>工具、玩法与本机管理</p><p id="mobileSetupSummary"></p><button id="mobileSettingsStart" class="secondary" type="button" hidden>设置本局数值</button></section>');
   $('mobileUtility').insertAdjacentHTML('afterbegin','<button id="mobileModeSwitch" class="secondary" type="button">更换游戏模式</button><p id="mobileModeHint"></p>');
+  $('mobileUtility').insertAdjacentHTML('beforeend','<button id="mobileSettingsNextPlayer" class="secondary" type="button" hidden>下一位开箱玩家 · 席位管理</button>');
+  $('joinArea').insertAdjacentHTML('afterend','<div id="roomModeFlow" class="mobile-only"><button id="roomModeSwitch" class="secondary" type="button">选择游戏模式</button><button id="roomEnterGame" class="enamel" type="button">进入游戏 →</button></div>');
+  $('roomModeSwitch').onclick=()=>window.GameModes?.openSwitcher();
+  $('roomEnterGame').onclick=()=>go(current?.phase==='ended'?'result':['pricing','offer'].includes(current?.phase)?'deal':'game');
   document.querySelector('.box-tray').insertAdjacentHTML('beforebegin','<p id="mobileRoundInfo" class="mobile-only"></p><button id="mobileStartGate" class="mobile-only enamel" type="button" hidden></button>');
   $('mobileStartGate').insertAdjacentHTML('beforebegin','<p id="mobileRoleHint" class="mobile-only" hidden></p>');
   document.querySelector('.stage').insertAdjacentHTML('beforeend','<div id="mobileGameActions" class="mobile-only"><button id="mobileQuickQuote" class="secondary" type="button">查看本轮报价</button><button id="mobileQuickMenu" class="secondary" type="button">我的目录</button></div>');
@@ -76,6 +85,9 @@
   $('settlement').insertAdjacentHTML('beforeend','<div id="mobileResultActions" class="mobile-only"><button id="mobileResultMenu" class="secondary" type="button">我的 · 更多玩法</button></div>');
   document.body.insertAdjacentHTML('beforeend','<nav id="mobileBottomNav" class="mobile-only" aria-label="手机底部导航"><button id="mobileTabGame" type="button"><span aria-hidden="true">▦</span>游戏</button><button id="mobileTabRoom" type="button"><span aria-hidden="true">⌂</span>房间</button><button id="mobileTabMy" type="button" aria-haspopup="dialog" aria-controls="mobileMenuDialog"><span aria-hidden="true">♙</span>我的</button><button id="mobileTabSettings" type="button"><span aria-hidden="true">⚙</span>设置</button></nav><dialog id="mobileMenuDialog" class="mobile-menu-dialog" aria-labelledby="mobileMenuTitle"><button id="mobileCloseMenu" class="mobile-menu-close" type="button" aria-label="关闭我的目录">×</button><span class="eyebrow">MY DREAM SPACE</span><h2 id="mobileMenuTitle">我的梦想目录</h2><p id="mobileMenuName"></p><div class="mobile-menu-grid"><button type="button" data-mobile-page="deal">本轮报价<span>接受或继续</span></button><button type="button" data-mobile-page="result">本局结算<span>结束自动直达</span></button><button type="button" data-mobile-page="collection">梦想礼物册<span>看看还有哪些</span></button><button type="button" data-mobile-page="record">追梦记录<span>我的保留箱</span></button><button type="button" data-mobile-page="banter">互动放话<span>跟熊二过过招</span></button><button type="button" data-mobile-page="settings">游戏设置<span>数值与工具</span></button></div><div class="mobile-menu-requests"><button id="mobileMenuStart" type="button" hidden></button><button id="mobileMenuCounter" type="button" hidden></button><button id="mobileMenuReshuffle" type="button" hidden></button></div></dialog>');
   $('mobileQuoteMore').onclick=menu;
+  $('mobileMenuReshuffle').parentNode.insertAdjacentHTML('beforeend','<button id="mobileMenuNextPlayer" type="button" hidden>下一位开箱 · 申请与审核</button>');
+  $('mobileMenuNextPlayer').onclick=()=>{$('mobileMenuDialog').close();window.SeatSwitch?.open();};
+  $('mobileSettingsNextPlayer').onclick=()=>window.SeatSwitch?.open();
   $('mobileTabGame').onclick=()=>go(current?.phase==='ended'?'result':['pricing','offer'].includes(current?.phase)?'deal':'game');$('mobileTabRoom').onclick=()=>go('room');$('mobileTabMy').onclick=$('mobileQuickMenu').onclick=$('mobileResultMenu').onclick=menu;$('mobileTabSettings').onclick=()=>go('settings');$('mobileQuickQuote').onclick=()=>go('deal');
   $('mobileCloseMenu').onclick=()=>$('mobileMenuDialog').close();$('mobileMenuDialog').oncancel=e=>{e.preventDefault();$('mobileMenuDialog').close();};
   for(const b of document.querySelectorAll('#mobileMenuDialog [data-mobile-page]'))b.onclick=()=>go(b.dataset.mobilePage);

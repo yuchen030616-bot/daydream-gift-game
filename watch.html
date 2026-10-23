@@ -1,0 +1,6 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>围观邀请</title></head>
+<body><h1>围观邀请</h1><p id="inviteStatus" role="status">正在打开围观邀请…</p><noscript>请开启 JavaScript 后重新打开完整邀请链接。</noscript>
+<script>
+(function(){'use strict';const here=new URL(location.href),hash=new URLSearchParams(here.hash.slice(1)),target=new URL('index.html',here);if(!(hash.get('room')||here.searchParams.get('room'))){document.getElementById('inviteStatus').textContent='围观邀请缺少房间信息，请让房主重新复制完整围观邀请。';return;}target.search=here.search;for(const key of ['play','request']){hash.delete(key);target.searchParams.delete(key);}hash.set('intent','watch');hash.set('view','1');target.hash=hash.toString();location.replace(target.href);})();
+</script></body></html>

@@ -39,7 +39,7 @@
     else if(game.reshuffleRequest?.status==='declined')$('quotePending').textContent='房主拒绝了洗牌申请，本局继续；这一局不能重复申请。';
     if(publicMode){$('quoteBearLine').textContent=drink?'这是一份自愿提案，按自己的意愿选择就好；可以继续开箱，也可以跳过或用水替代。':line;$('quotePopupGift').innerHTML=api.art(game.offer)+`<strong>${game.offer.name}</strong>`;$('quoteAudience').textContent='第 '+(DreamEngine.QUOTE_ROUNDS.indexOf(game.round)+1)+' 次报价 · 已开 '+game.round+' 箱';}
     if(window.MobilePages?.enabled()&&MobilePages.page!=='deal'){close();return;}
-    if(dismissed||$('mobileMenuDialog')?.open||$('numericStartDialog')?.open||$('modal').open||$('adminDialog')?.open||$('counterofferDialog')?.open||$('reshuffleDialog')?.open){close();return;}
+    if(dismissed||$('seatSwitchDialog')?.open||$('mobileMenuDialog')?.open||$('numericStartDialog')?.open||$('modal').open||$('adminDialog')?.open||$('counterofferDialog')?.open||$('reshuffleDialog')?.open){close();return;}
     if(privateMode)$('quotePrivate').appendChild($('ownerDesk'));else restoreDesk();
     if(!$('quoteDialog').open)$('quoteDialog').showModal();
     else if(changed)$('closeQuote').focus();

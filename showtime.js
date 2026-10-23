@@ -29,7 +29,7 @@
     pendingSettlementScroll=false;
   }
   function showResult(){
-    if(!latest?.comparison||latest.phase!=='ended'||document.querySelector('dialog[open]'))return;
+    if(!latest?.comparison||latest.phase!=='ended'||window.MobilePages?.enabled()&&window.MobilePages.page&&window.MobilePages.page!=='result'||document.querySelector('dialog[open]'))return;
     const g=latest,c=g.comparison,d=$('resultDialog');d.className='showtime-result is-'+(g.mode==='drink'?'even':c.verdict);
     $('resultTitle').textContent=g.mode==='drink'?(c.kind==='skip'?'本局已跳过，不用喝':'本局轻饮结果'):g.mode==='money'?(c.verdict==='win'?'本局金额更高':c.verdict==='loss'?'本局金额更低':'本局金额持平'):c.verdict==='loss'?'这波亏了，熊二笑了！':c.verdict==='win'?'漂亮！这局你赚了':'这一局，稳稳收下';
     $('resultTaunt').textContent=verdict(g);$('resultCompare').innerHTML=comparisonHTML(g);pendingResult=false;scrollSettlement();d.showModal();

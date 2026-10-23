@@ -1,0 +1,6 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>开箱邀请</title></head>
+<body><h1>开箱邀请</h1><p id="inviteStatus" role="status">正在打开开箱邀请…</p><noscript>请开启 JavaScript 后重新打开完整邀请链接。</noscript>
+<script>
+(function(){'use strict';const here=new URL(location.href),query=here.searchParams,hash=new URLSearchParams(here.hash.slice(1));const get=k=>hash.has(k)?hash.get(k):query.get(k);const token=get('play'),request=get('request');if(!get('room')||token&&!/^[A-Za-z0-9_-]{32}$/.test(token)||!token&&request!=='1'){document.getElementById('inviteStatus').textContent='开箱邀请缺少有效操作权限，请让房主重新复制完整开箱邀请。仅有房间码不能直接获得开箱权。';return;}const target=new URL('index.html',here);target.search=here.search;hash.set('intent','player');hash.delete('view');target.searchParams.delete('view');target.hash=hash.toString();location.replace(target.href);})();
+</script></body></html>
