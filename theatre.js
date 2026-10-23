@@ -13,7 +13,7 @@
   stop();if(event.kind==='shuffle'){
    $('theatreShuffle').hidden=false;
    $('theatreShuffleLine').textContent=String(event.text||'熊二正在洗牌，请稍候…');
-   const stage=document.querySelector('.stage');stage?.scrollIntoView?.({behavior:'instant',block:'center'});
+   const stage=document.querySelector('.stage');if(!window.MobilePages?.focus('game'))stage?.scrollIntoView?.({behavior:'instant',block:'center'});
   }else if(event.kind==='banter'){
    const bubble=$('theatreBanter');(document.querySelector('dialog[open]')||document.body).appendChild(bubble);$('theatreSpeaker').textContent=event.speaker==='host'?'熊二 · 谈判放话':'追梦人 · 接招吧';$('theatreLine').textContent=String(event.text||'');bubble.hidden=false;
    // A normal positioned panel never enters the modal top layer or steals focus.
@@ -38,7 +38,7 @@
   document.querySelector('.decision').insertAdjacentHTML('afterend',controls);
   document.body.insertAdjacentHTML('beforeend','<aside id="theatreBanter" class="theatre-banter" role="status" aria-live="polite" hidden><img src="assets/bear-negotiator.png" alt="熊二"><div><span id="theatreSpeaker"></span><p id="theatreLine"></p></div></aside>');
   for(const button of document.querySelectorAll('[data-theatre-speaker]'))button.onclick=()=>send(button.dataset.theatreSpeaker,Number(button.dataset.theatreIndex));
-  document.addEventListener('close',e=>{if(e.target===$('quoteDialog'))queueMicrotask(placeControls);},true);
+  document.addEventListener('close',e=>{if(e.target===$('quoteDialog'))queueMicrotask(placeControls);queueMicrotask(()=>{const bubble=$('theatreBanter');if(bubble&&!bubble.hidden)(document.querySelector('dialog[open]')||document.body).appendChild(bubble);});},true);
  },render,stop};
 })();
 

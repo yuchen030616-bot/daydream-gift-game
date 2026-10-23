@@ -22,6 +22,7 @@
   }
   function scrollSettlement(){
     if(!pendingSettlementScroll||latest?.phase!=='ended'||!latest.comparison||$('settlement').hidden)return;
+    if(window.MobilePages?.focus('result')){pendingSettlementScroll=false;return;}
     const blocking=document.querySelector('dialog[open]');
     if(blocking&&blocking!==$('resultDialog'))return;
     $('settlement').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});
@@ -47,7 +48,7 @@
       if(playable())locked=false;
       $('keepFinal').disabled=$('swapFinal').disabled=!playable()||locked;
       $('duelHint').textContent=g.mode==='drink'?(playable()?'保留或换箱，也可以随时选择跳过、不喝。':'等待主播选择，也可以自愿跳过。'):playable()?'守住第一眼的直觉，还是换个命运？点选后立即开箱。':'等待主播决定：保留原箱，还是换成另一箱。';
-      if(previous?.phase!=='final'){$('finalShowdown').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'center'});moment('最后两箱 · 命运对决','保留，还是换箱？只此一次选择');}
+      if(previous?.phase!=='final'){if(!window.MobilePages?.focus('game'))$('finalShowdown').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'center'});moment('最后两箱 · 命运对决','保留，还是换箱？只此一次选择');}
     }
     if(ended){
       $('settlementCompare').innerHTML=comparisonHTML(g);$('settlementVerdict').textContent=verdict(g);

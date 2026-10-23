@@ -60,6 +60,7 @@
       this.counterProposal = null;
       this.counterBudget = null;
       this.reshuffleRequest = null;
+      this.poolProposal = null;
     }
     _index(i) {
       if (!Number.isInteger(i) || i < 0 || i >= this.boxes.length) throw new RangeError('无效箱号');
@@ -70,6 +71,7 @@
     }
     set reshuffleRequest(value){this._reshuffleRequestState=value;}
     submitReshuffleRequest(){
+      if(this.poolProposal?.status==='pending'&&this.poolProposal.gameId===this.gameId)throw new Error('数值方案等待审批，暂时不能申请洗牌');
       if(this.reshuffleRequest)throw new Error('本局已经申请过重新洗牌');
       const id=typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
       this.reshuffleRequest={id,gameId:this.gameId,status:'pending',phrase:'求求熊二大王了，我是你的兵'};
@@ -80,7 +82,24 @@
       if(!request||request.status!=='pending'||typeof id!=='string'||request.id!==id||typeof approved!=='boolean')throw new Error('这份洗牌申请已失效或审批无效');
       request.status=approved?'approved':'declined';return {...request};
     }
+    _poolSetup(){
+      if(!['money','drink'].includes(this.mode)||this.started!==false||this.phase!=='select'||this.selected!==null||this.reshuffleRequest?.status==='pending')throw new Error('仅数值模式开始前可提交或审批数值');
+    }
+    submitPoolProposal(configuration){
+      this._poolSetup();if(this.poolProposal&&this.poolProposal.gameId===this.gameId&&this.poolProposal.status!=='declined')throw new Error('数值方案已提交，请等待房主确认');
+      const config=makePool(configuration).config;if(config.mode!==this.mode)throw new Error('不能通过数值方案切换版本');
+      const id=typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
+      this.poolProposal={id,gameId:this.gameId,status:'pending',config};return JSON.parse(JSON.stringify(this.poolProposal));
+    }
+    decidePoolProposal(id,configuration){
+      this._poolSetup();const proposal=this.poolProposal;
+      if(!proposal||proposal.status!=='pending'||proposal.id!==id||proposal.gameId!==this.gameId)throw new Error('这份数值方案已失效');
+      if(configuration===null){proposal.status='declined';return null;}
+      const config=makePool(configuration).config;if(config.mode!==this.mode)throw new Error('审批不能切换游戏版本');
+      proposal.config=config;proposal.status='approved';return {...config,values:[...config.values]};
+    }
     configure(configuration){
+      if(this.poolProposal?.status==='pending'&&this.poolProposal.gameId===this.gameId)throw new Error('数值方案等待审批，不能直接更换数值');
       if(this.phase!=='select'||this.selected!==null)throw new Error('仅未选箱时可以更换模式');
       const started=this.started,next=new Engine(this.rng,configuration);Object.assign(this,next);this.started=started;this.original=null;
       return this.snapshot();
@@ -96,6 +115,7 @@
       return this.snapshot();
     }
     start() {
+      if(this.poolProposal?.status==='pending'&&this.poolProposal.gameId===this.gameId)throw new Error('数值方案等待审批，不能直接开始');
       if(this.phase!=='select'||this.started!==false)throw new Error('当前无需开始游戏');
       this.started=true;
       return this.snapshot();
@@ -317,7 +337,7 @@
     }
     snapshot() {
       const copy = value => value && { ...value, ...(value.items ? { items: value.items.map(item => ({ ...item })) } : {}) };
-      return { reshuffleRequest:this.reshuffleRequest&&JSON.parse(JSON.stringify(this.reshuffleRequest)),counterBudget:this.counterBudget,counterProposal:this.counterProposal&&{...this.counterProposal,items:this.counterProposal.items.map(item=>({...item}))},mode:this.mode,config:{...this.config,values:[...this.config.values]},gifts:this.gifts.map(g=>({...g})),stageEvent:this.stageEvent==null?null:JSON.parse(JSON.stringify(this.stageEvent)),boxes: [...this.boxes], directorPreset:this.directorPreset,directorLog:(this.directorLog||[]).map(e=>({...e})),gameId:this.gameId, started:this.started, selected: this.selected, initialSelected:this.initialSelected,finalChoice:this.finalChoice,opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, cadence:this.cadence,previousOfferName:this.previousOfferName,pricesVersion:this.pricesVersion,lastDeclinedOffer:copy(this.lastDeclinedOffer),comparison:this.comparison&&{...this.comparison,alternative:copy(this.comparison.alternative)},offer: copy(this.offer), result: copy(this.result) };
+      return { poolProposal:this.poolProposal&&JSON.parse(JSON.stringify(this.poolProposal)),reshuffleRequest:this.reshuffleRequest&&JSON.parse(JSON.stringify(this.reshuffleRequest)),counterBudget:this.counterBudget,counterProposal:this.counterProposal&&{...this.counterProposal,items:this.counterProposal.items.map(item=>({...item}))},mode:this.mode,config:{...this.config,values:[...this.config.values]},gifts:this.gifts.map(g=>({...g})),stageEvent:this.stageEvent==null?null:JSON.parse(JSON.stringify(this.stageEvent)),boxes: [...this.boxes], directorPreset:this.directorPreset,directorLog:(this.directorLog||[]).map(e=>({...e})),gameId:this.gameId, started:this.started, selected: this.selected, initialSelected:this.initialSelected,finalChoice:this.finalChoice,opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, cadence:this.cadence,previousOfferName:this.previousOfferName,pricesVersion:this.pricesVersion,lastDeclinedOffer:copy(this.lastDeclinedOffer),comparison:this.comparison&&{...this.comparison,alternative:copy(this.comparison.alternative)},offer: copy(this.offer), result: copy(this.result) };
     }
   }
   Engine.GIFTS = GIFTS;

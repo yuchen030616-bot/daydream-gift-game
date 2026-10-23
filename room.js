@@ -40,7 +40,7 @@
   room.members=[];
   let nameDialog,nameInput,nameError,nameResolve;
   function diagnostics(){
-    return ['版本：20261023-alladmin','角色：'+room.role,'房间信息：'+(!!room.code),'操作链接：'+(!!room.token),
+    return ['版本：20261023-phonepages','角色：'+room.role,'房间信息：'+(!!room.code),'操作链接：'+(!!room.token),
       '安全加密：'+(!!globalThis.crypto?.subtle),'WebSocket：'+(typeof WebSocket!=='undefined'),
       ...relays.map((url,i)=>{const c=room.clients[i];return (url.includes('shiftr.io')?'兼容线路（443）':'线路'+(i+1))+'：'+(!c?'未启用':c.roomSubscribed?'已连接，可收发':c.connected?(c.roomError?'已连接，订阅重试中':'已连接，等待订阅'):c.roomError?'连接失败，正在重试':'正在连接');}),
       '房主同步：'+(room.role==='host'?'本机房主':room.lastHost?'最近 '+Math.max(0,Math.round((monotonic()-room.lastHostMono)/1000))+' 秒前':'尚未收到'),
@@ -87,7 +87,7 @@
   }
   function roster(){return [{name:room.name||'匿名',role:'host'},...Array.from(room.peers,([id,p])=>({name:p.name||'匿名',role:id===room.playerId?'player':'watch'}))];}
   function note(s){$('roomNotice').textContent=s;}
-  function linked(role){const u=new URL('index.html',location.href);u.search='?v=20261023-alladmin';u.hash=new URLSearchParams({room:room.code,...(isAlias(room.alias)?{code:room.alias}:{}),...(role==='player'?{play:owner.token}:{view:'1'})}).toString();return u.href;}
+  function linked(role){const u=new URL('index.html',location.href);u.search='?v=20261023-phonepages';u.hash=new URLSearchParams({room:room.code,...(isAlias(room.alias)?{code:room.alias}:{}),...(role==='player'?{play:owner.token}:{view:'1'})}).toString();return u.href;}
   function canPlay(){return room.role==='solo'||room.role==='player'&&room.ready&&hostFresh()&&room.playerId===room.id&&!room.pending;}
   function update(){
     document.body.dataset.roomRole=room.role;
@@ -132,7 +132,7 @@
       room.rev=d.rev;room.lastAt=d.at;room.lastHost=now;room.lastHostMono=monotonic();room.playerId=d.playerId;room.count=d.count;room.ready=true;
       if(isAlias(d.alias))room.alias=d.alias;
       room.members=Array.isArray(d.members)?d.members.slice(0,200).map(p=>({name:validName(p?.name)||'匿名',role:p?.role==='host'?'host':p?.role==='player'?'player':'watch'})):[{name:'匿名',role:'host'}];
-      if(room.pending&&d.acks?.includes(room.pending.data.id)){room.pending=null;note('已同步。');}
+      if(room.pending&&d.acks?.includes(room.pending.data.id)){if(['poolProposal','applyConfig'].includes(room.pending.data.action)&&d.state.started===false&&d.state.poolProposal?.status!=='pending')window.NumericStart?.failed?.('这次提交未被采用，草稿已保留，请重新提交给房主。');room.pending=null;note('已同步。');}
       const proofChanged=reply&&room.syncProof!==reply.challenge;if(proofChanged)room.syncProof=reply.challenge;
       update();if(proofChanged)hello();return;
     }
@@ -190,7 +190,7 @@
       store.set('daydream.lease.'+room.code,{id:room.id,at:now});
     }
     if(now-heartbeatAt>7000){heartbeatAt=now;hello();}
-    if(room.pending&&now-room.pending.sent>10000){room.pending=null;note('未收到房主确认，请等待连接恢复后重试；不会在离线时自动开箱。');}
+    if(room.pending&&now-room.pending.sent>10000){if(['poolProposal','applyConfig'].includes(room.pending.data.action))window.NumericStart?.failed?.('未收到房主确认，草稿已保留；连接恢复后请重试。');room.pending=null;note('未收到房主确认，请等待连接恢复后重试；不会在离线时自动开箱。');}
     update();
   }
   async function start(code,token,forceWatch=false){
@@ -222,7 +222,7 @@
   }
   async function copy(input){input.select();try{await navigator.clipboard.writeText(input.value);note('已复制，可以粘贴发送。');}catch{try{if(!document.execCommand('copy'))throw Error();note('已复制，可以粘贴发送。');}catch{note('请长按上面的链接，选择复制。');}}}
   window.DreamRoom={
-    get role(){return room.role},canPlay,
+    get role(){return room.role},get connected(){return room.role==='solo'||room.clients.some(c=>c.connected&&c.roomSubscribed)&&(room.role==='host'||room.ready&&hostFresh());},canPlay,
     request(action,index){if(room.role==='solo')return false;if(room.role==='host'){if(action==='reset'){adapter.reset();room.rev++;save();broadcast();}return true;}if(!canPlay())return true;
       const data={type:'action',id:C.id(),peer:room.id,at:hostNow(),rev:room.rev,action,index};room.pending={data,sent:Date.now()};update();C.mac(data,room.token).then(auth=>publish({data,auth}));note('操作已发送，等待房主确认…');return true;},
     changed(){if(room.role==='host'){room.rev++;save();broadcast();}},
@@ -232,7 +232,7 @@
       $('joinRoom').onclick=async()=>{if(joining)return;const alias=$('joinCode').value.trim();if(!isAlias(alias)){note('请输入4位数字房间码，例如 1234。');return;}if(!await ensureName()){note('填写昵称后才能进入房间。');return;}if(joining)return;const ticket=++startTicket;joining=true;$('joinRoom').disabled=true;$('createRoom').disabled=true;try{note('正在查找房间…');const code=await resolveAlias(alias);if(ticket===startTicket)await enter(code);}catch(e){if(ticket===startTicket)note(e.message||'查找房间失败，请稍后再试。');}finally{joining=false;$('joinRoom').disabled=false;$('createRoom').disabled=false;}};
       $('joinCode').onkeydown=e=>{if(e.key==='Enter')$('joinRoom').click()};
       $('copyPlayer').onclick=()=>copy($('roomLink'));$('copyWatch').onclick=()=>copy($('watchLink'));
-      $('leaveRoom').onclick=()=>{if(confirm('离开房间？房主离开后，其他人将暂停同步。')){closeDirectory();if(room.role==='host')store.set('daydream.lease.'+room.code,null);location.href=location.pathname+'?v=20261023-alladmin';}};
+      $('leaveRoom').onclick=()=>{if(confirm('离开房间？房主离开后，其他人将暂停同步。')){closeDirectory();if(room.role==='host')store.set('daydream.lease.'+room.code,null);location.href=location.pathname+'?v=20261023-phonepages';}};
       $('reconnectRoom').onclick=()=>location.reload();
       window.addEventListener('pagehide',()=>{startTicket++;closeDirectory();if(room.role==='host')store.set('daydream.lease.'+room.code,null);room.clients.forEach(c=>c.end(true));});
       document.addEventListener('visibilitychange',()=>{if(!document.hidden)hello();});

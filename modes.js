@@ -33,10 +33,10 @@
  function roundInput(input,mode){if(mode!=='money'||input.value.trim()==='')return;const value=Number(input.value);if(Number.isFinite(value)&&value>=0&&value<=1000000){input.value=String(Math.round(value));feedback('已四舍五入为整数元；修改后点“确认使用”。');}}
  function readNumber(id){const raw=$(id).value.trim();if(raw==='')throw Error('请填写范围，0也是有效数值');return Number(raw);}
  function apply(){
-  try{const g=api.getGame();if(!canApply(g))throw Error('只能在本局选箱前应用数值；房间中请先等待同步');const min=readNumber('modeMin'),max=readNumber('modeMax');const values=Array.from(document.querySelectorAll('[data-pool-value]'),n=>{if(n.value.trim()==='')throw Error('请填好全部九个数值');return Number(n.value);});const config=Engine.makePool({mode:g.mode,min,max,values}).config;api.applyConfig(config);remember(config);feedback(role()==='player'?'已发送，等待房主确认数值。':'九个数值已应用并重新打乱。');}catch(e){feedback(e.message,true);}
+  try{const g=api.getGame();if(!canApply(g))throw Error('只能在本局选箱前应用数值；房间中请先等待同步');const min=readNumber('modeMin'),max=readNumber('modeMax');const values=Array.from(document.querySelectorAll('[data-pool-value]'),n=>{if(n.value.trim()==='')throw Error('请填好全部九个数值');return Number(n.value);});const config=Engine.makePool({mode:g.mode,min,max,values}).config;if(window.NumericStart?.intercept(config))return;api.applyConfig(config);remember(config);feedback(role()==='player'?'已发送，等待房主确认数值。':'九个数值已应用并重新打乱。');}catch(e){feedback(e.message,true);}
  }
  function switchMode(mode){
-  try{if(!owner())throw Error('房间版本由房主切换');if(api.isBusy())throw Error('动画进行中，请稍后切换');if(!TITLES[mode])throw Error('无效版本');const g=api.getGame();if((g.mode||'gift')===mode){$('modeSetup').scrollIntoView({behavior:'smooth',block:'start'});return;}
+  try{if(!owner())throw Error('房间版本由房主切换');if(api.isBusy())throw Error('动画进行中，请稍后切换');if(!TITLES[mode])throw Error('无效版本');const g=api.getGame();if((g.mode||'gift')===mode){if(!window.MobilePages?.focus('settings'))$('modeSetup').scrollIntoView({behavior:'smooth',block:'start'});return;}
    const perform=()=>{api.switchMode(remembered(mode));pendingSwitch=null;};
    if(!['select','ended'].includes(g.phase)){pendingSwitch={mode,key:configKey(g)};api.show('切换到'+TITLES[mode]+'？','<p>切换会结束当前这局并重新准备九只宝箱。房间码与在线连接保留。</p><button id="confirmModeSwitch" class="primary" type="button">确认切换版本</button>');$('confirmModeSwitch').onclick=()=>{if(!owner()||!pendingSwitch||configKey(api.getGame())!==pendingSwitch.key){$('modal').close();feedback('对局已变化，请重新选择版本。',true);return;}$('modal').close();perform();};}
    else perform();
@@ -66,17 +66,17 @@
   $('modeSetupNote').textContent=mode==='money'?'金额自动四舍五入为整数元。填好范围，点“自动生成并使用”即可装箱；不满意的数字可直接改，再点确认。':'以“小口数”为游戏标记，范围0至5，0代表不喝。点“自动生成并使用”即可装箱；可随时跳过或用无酒精饮品替代。';
   const note=document.querySelector('.mode-drink-note');if(note)note.hidden=mode!=='drink';
   if(configKey(g)!==draftKey){draftKey=configKey(g);const config={mode,min:g.config?.min??0,max:g.config?.max??(mode==='drink'?3:1000),values:(g.gifts||g.pool).map(x=>x.value)};writeDraft(config);feedback(owner()?'数值可逐项修改，选箱前确认即可。':role()==='player'?'稍后开始后可先调整数值；选箱前提交给房主确认。':'本房间配置由房主与操作玩家设置。');}
-  const edit=canApply(g);
+  const edit=canApply(g)&&(!g.poolProposal||g.poolProposal.status!=='pending'||window.NumericStart?.editing());
   for(const n of document.querySelectorAll('#modeSetup input'))n.disabled=!edit;$('generateValues').disabled=!edit;$('applyValues').disabled=!canApply(g);
   $('generateValues').textContent=g.phase==='select'?'自动生成并使用九个数 ↗':'已开局 · 重置后生成';
   if(g.phase!=='select')feedback(g.phase==='ended'?'本局已结束，重置本局后可重新生成数字。':'本局数字已锁定；重置本局后可重新生成，当前宝箱不会被修改。');
  }
- root.GameModes={generate,defaults,remembered,remember,decorate,render,canApply,
+ root.GameModes={generate,defaults,remembered,remember,decorate,render,canApply,setDraft:config=>writeDraft(Engine.makePool(config).config),
   init(options){api=options;
    for(const b of document.querySelectorAll('[data-mode]'))b.onclick=()=>switchMode(b.dataset.mode);
-   $('generateValues').onclick=()=>{try{const g=api.getGame();if(!canApply(g))throw Error('只能在选箱前生成，已开局请先重置；联机请等待连接就绪');const previous=Array.from(document.querySelectorAll('[data-pool-value]'),n=>Number(n.value));const config=generate(g.mode,readNumber('modeMin'),readNumber('modeMax'),Math.random,previous);writeDraft(config);api.applyConfig(config);remember(config);feedback((role()==='player'?'九个数已生成，正在同步到房间。':'九个数已生成并装入宝箱，可以开始。')+(config.min===config.max?'范围上下限相同，因此九个数相同。':'不满意可再生成，或逐项修改后确认。'));$('modeValues').scrollIntoView?.({behavior:'smooth',block:'center'});}catch(e){feedback(e.message,true);}};
+   $('generateValues').onclick=()=>{try{const g=api.getGame();if(!canApply(g))throw Error('只能在选箱前生成，已开局请先重置；联机请等待连接就绪');const previous=Array.from(document.querySelectorAll('[data-pool-value]'),n=>Number(n.value));const config=generate(g.mode,readNumber('modeMin'),readNumber('modeMax'),Math.random,previous);writeDraft(config);if(window.NumericStart?.editing()){feedback(role()==='solo'?'已生成九项草稿，确认后直接洗牌。':'已生成九项草稿，提交后由房主最终确认。');return;}api.applyConfig(config);remember(config);feedback((role()==='player'?'九个数已生成，正在同步到房间。':'九个数已生成并装入宝箱，可以开始。')+(config.min===config.max?'范围上下限相同，因此九个数相同。':'不满意可再生成，或逐项修改后确认。'));if(!window.MobilePages?.focus('settings'))$('modeValues').scrollIntoView?.({behavior:'smooth',block:'center'});}catch(e){feedback(e.message,true);}};
    $('applyValues').onclick=apply;for(const id of ['modeMin','modeMax']){$(id).oninput=()=>feedback('范围已改，点“自动生成并使用”，或调整九项后确认。');$(id).onchange=()=>roundInput($(id),api.getGame().mode);}
    document.querySelector('.decision-actions').insertAdjacentHTML('beforeend','<button id="skipDrink" class="secondary" type="button" hidden>本局跳过 · 不喝</button>');$('skipDrink').onclick=()=>{if(playable()&&!api.isBusy())api.dispatch('skip');};
-  },openSettings(){if(current?.mode!=='gift')$('modeSetup').scrollIntoView({behavior:'smooth',block:'start'});}
+  },openSettings(){if(current?.mode!=='gift'&&!window.MobilePages?.focus('settings'))$('modeSetup').scrollIntoView({behavior:'smooth',block:'start'});}
  };
 })(typeof window!=='undefined'?window:null);
