@@ -15,17 +15,18 @@
   const hostFresh=()=>room.lastHost>0&&monotonic()-room.lastHostMono<24000;
   function ensureSync(){if(!room.syncNonce||!room.clockSynced&&monotonic()-room.syncIssued>10000){room.syncNonce=C.nonce();room.syncIssued=monotonic();room.syncProof='';}}
   const isAlias=value=>typeof value==='string'&&/^[0-9]{4}$/.test(value);
-  let directoryHandle=null,directoryEpoch=0,joining=false,startTicket=0;
-  function closeDirectory(){directoryEpoch++;directoryHandle?.close();directoryHandle=null;}
+  let directoryHandle=null,directoryEpoch=0,directoryRetry=null,directoryAttempt=0,directoryWorking=false,directoryError='',joining=false,startTicket=0;
+  function closeDirectory(){directoryEpoch++;clearTimeout(directoryRetry);directoryRetry=null;directoryHandle?.close();directoryHandle=null;directoryWorking=false;directoryAttempt=0;directoryError='';}
   function claimAlias(){
-    if(!window.RoomDirectory||room.role!=='host'||room.closed)return;
-    closeDirectory();const epoch=directoryEpoch,claimOwner=owner,code=room.code;
+    if(room.role!=='host'||room.closed||directoryWorking)return;
+    clearTimeout(directoryRetry);directoryRetry=null;const epoch=++directoryEpoch,claimOwner=owner,code=room.code;let announced=false;
+    const retry=missing=>{if(epoch!==directoryEpoch||room.closed||room.role!=='host')return;directoryWorking=false;directoryError=missing?'房间码组件未加载，请刷新网页更新；游戏与已有链接不受影响。':'房间码通道暂不可用，正在自动重试；游戏与已有链接不受影响。';const delay=Math.min(30000,2000*2**Math.min(directoryAttempt++,4));directoryRetry=setTimeout(()=>{directoryRetry=null;if(epoch===directoryEpoch)claimAlias();},delay);update();note(directoryError);};
+    if(typeof window.RoomDirectory?.claim!=='function'){retry(true);return;}
+    directoryWorking=true;directoryError='';update();
     Promise.resolve().then(()=>window.RoomDirectory.claim({code,pub:claimOwner.pub,privateKey:claimOwner.privateKey,...(isAlias(claimOwner.alias)?{alias:claimOwner.alias}:{})},alias=>{
       if(epoch!==directoryEpoch||room.closed||room.role!=='host'||room.code!==code||!isAlias(alias))return;
-      room.alias=alias;claimOwner.alias=alias;save();update();broadcast();
-    })).then(handle=>{if(epoch!==directoryEpoch||room.closed)handle.close();else directoryHandle=handle;}).catch(()=>{
-      if(epoch===directoryEpoch&&!room.closed){room.alias='';update();note('4位房间码暂未生成，请稍后重新连接；下方主播链接和围观链接仍可使用。');}
-    });
+      announced=true;room.alias=alias;claimOwner.alias=alias;save();update();broadcast();
+    })).then(handle=>{if(epoch!==directoryEpoch||room.closed){handle.close();return;}if(!announced){handle.close();throw Error('房间码未确认');}const previous=directoryHandle;directoryHandle=handle;if(previous!==handle)previous?.close();directoryWorking=false;directoryAttempt=0;directoryError='';update();}).catch(()=>retry(false));
   }
   async function resolveAlias(alias){
     if(!isAlias(alias))throw Error('请输入4位数字房间码，例如 1234。');
@@ -40,8 +41,9 @@
   room.members=[];
   let nameDialog,nameInput,nameError,nameResolve;
   function diagnostics(){
-    return ['版本：20261023-phonepages','角色：'+room.role,'房间信息：'+(!!room.code),'操作链接：'+(!!room.token),
+    return ['版本：20261023-repair10','角色：'+room.role,'房间信息：'+(!!room.code),'操作链接：'+(!!room.token),
       '安全加密：'+(!!globalThis.crypto?.subtle),'WebSocket：'+(typeof WebSocket!=='undefined'),
+      '房间码目录：'+(room.role!=='host'?'由房主维护':directoryWorking?'正在连接或生成':directoryError?'暂不可用，自动重试中':isAlias(room.alias)?'已生成':'等待生成'),
       ...relays.map((url,i)=>{const c=room.clients[i];return (url.includes('shiftr.io')?'兼容线路（443）':'线路'+(i+1))+'：'+(!c?'未启用':c.roomSubscribed?'已连接，可收发':c.connected?(c.roomError?'已连接，订阅重试中':'已连接，等待订阅'):c.roomError?'连接失败，正在重试':'正在连接');}),
       '房主同步：'+(room.role==='host'?'本机房主':room.lastHost?'最近 '+Math.max(0,Math.round((monotonic()-room.lastHostMono)/1000))+' 秒前':'尚未收到'),
       '收到房主状态：'+room.receivedStates+' 次',
@@ -57,6 +59,8 @@
     const text=document.createElement('pre');text.id='roomDiagnosticText';
     const copy=document.createElement('button');copy.type='button';copy.textContent='复制检测结果';copy.onclick=async()=>{try{await navigator.clipboard.writeText(diagnostics());note('检测结果已复制，可发给房主排查。');}catch{note('请复制或截图上面的连接检测信息。');}};
     detail.append(summary,text,copy);panel.append(detail);
+    const refresh=document.createElement('button');refresh.id='refreshRoomCode';refresh.type='button';refresh.className='room-code-refresh';refresh.hidden=true;refresh.onclick=()=>{if(room.role==='host')claimAlias();};
+    const aliasStatus=document.createElement('p');aliasStatus.id='roomAliasStatus';aliasStatus.className='room-alias-status';aliasStatus.setAttribute('role','status');aliasStatus.setAttribute('aria-live','polite');panel.append(refresh,aliasStatus);
     const identity=document.createElement('div');identity.className='room-identity';
     const me=document.createElement('span');me.id='roomMyName';
     const rename=document.createElement('button');rename.type='button';rename.textContent='修改昵称';rename.onclick=async()=>{if(await ensureName(true)){update();if(room.role!=='solo')hello();}};
@@ -87,7 +91,7 @@
   }
   function roster(){return [{name:room.name||'匿名',role:'host'},...Array.from(room.peers,([id,p])=>({name:p.name||'匿名',role:id===room.playerId?'player':'watch'}))];}
   function note(s){$('roomNotice').textContent=s;}
-  function linked(role){const u=new URL('index.html',location.href);u.search='?v=20261023-phonepages';u.hash=new URLSearchParams({room:room.code,...(isAlias(room.alias)?{code:room.alias}:{}),...(role==='player'?{play:owner.token}:{view:'1'})}).toString();return u.href;}
+  function linked(role){const u=new URL('index.html',location.href);u.search='?v=20261023-repair10';u.hash=new URLSearchParams({room:room.code,...(isAlias(room.alias)?{code:room.alias}:{}),...(role==='player'?{play:owner.token}:{view:'1'})}).toString();return u.href;}
   function canPlay(){return room.role==='solo'||room.role==='player'&&room.ready&&hostFresh()&&room.playerId===room.id&&!room.pending;}
   function update(){
     document.body.dataset.roomRole=room.role;
@@ -98,7 +102,9 @@
     $('createRoom').hidden=active;$('soloMode').hidden=active;$('joinArea').hidden=active;
     $('leaveRoom').hidden=!active;$('reconnectRoom').hidden=!active;
     $('roomLinkArea').hidden=!host;$('watchLinkArea').hidden=!host;
-    $('roomCode').textContent=active?(isAlias(room.alias)?room.alias:host?'生成中…':'等待4位房间码…'):'';
+    $('roomCode').textContent=active?(isAlias(room.alias)?room.alias:host?directoryError?'暂未生成':'生成中…':'等待4位房间码…'):'';
+    if($('refreshRoomCode')){$('refreshRoomCode').hidden=!host;$('refreshRoomCode').disabled=directoryWorking;$('refreshRoomCode').textContent=directoryWorking?(isAlias(room.alias)?'正在刷新房间码…':'正在生成房间码…'):isAlias(room.alias)?'刷新房间码':'重试生成房间码';}
+    if($('roomAliasStatus')){$('roomAliasStatus').hidden=!host;$('roomAliasStatus').textContent=!host?'':directoryError||(directoryWorking?(isAlias(room.alias)?'正在检查房间码通道，现有房间码仍保留。':'正在连接房间码通道，请稍候…'):isAlias(room.alias)?'房间码已就绪。刷新只检查房间码，不重开本局。':'等待生成房间码。');}
     const online=room.clients.some(c=>c.connected&&c.roomSubscribed),fresh=hostFresh();
     $('roomStatus').textContent=!active?'单人模式':host?(online?'房主 · 等待 / 同步中':'房主 · 正在连接'):!online?'网络连接中…':!fresh?'等待房主上线…':room.role==='player'?(room.playerId===room.id?'主播 · 实时同步':room.playerId?'操作席已被使用':'正在加入操作席…'):'围观 · 实时同步';
     $('roomCount').textContent=!active?'':host||room.ready&&fresh?'在线 '+(room.count||1)+' 人（含房主）':'在线人数待同步';
@@ -232,7 +238,7 @@
       $('joinRoom').onclick=async()=>{if(joining)return;const alias=$('joinCode').value.trim();if(!isAlias(alias)){note('请输入4位数字房间码，例如 1234。');return;}if(!await ensureName()){note('填写昵称后才能进入房间。');return;}if(joining)return;const ticket=++startTicket;joining=true;$('joinRoom').disabled=true;$('createRoom').disabled=true;try{note('正在查找房间…');const code=await resolveAlias(alias);if(ticket===startTicket)await enter(code);}catch(e){if(ticket===startTicket)note(e.message||'查找房间失败，请稍后再试。');}finally{joining=false;$('joinRoom').disabled=false;$('createRoom').disabled=false;}};
       $('joinCode').onkeydown=e=>{if(e.key==='Enter')$('joinRoom').click()};
       $('copyPlayer').onclick=()=>copy($('roomLink'));$('copyWatch').onclick=()=>copy($('watchLink'));
-      $('leaveRoom').onclick=()=>{if(confirm('离开房间？房主离开后，其他人将暂停同步。')){closeDirectory();if(room.role==='host')store.set('daydream.lease.'+room.code,null);location.href=location.pathname+'?v=20261023-phonepages';}};
+      $('leaveRoom').onclick=()=>{if(confirm('离开房间？房主离开后，其他人将暂停同步。')){closeDirectory();if(room.role==='host')store.set('daydream.lease.'+room.code,null);location.href=location.pathname+'?v=20261023-repair10';}};
       $('reconnectRoom').onclick=()=>location.reload();
       window.addEventListener('pagehide',()=>{startTicket++;closeDirectory();if(room.role==='host')store.set('daydream.lease.'+room.code,null);room.clients.forEach(c=>c.end(true));});
       document.addEventListener('visibilitychange',()=>{if(!document.hidden)hello();});

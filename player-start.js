@@ -10,7 +10,8 @@
   current=game;const waiting=player()&&game.phase==='select'&&game.started===false;
   $('readyPlayer').hidden=!waiting;
   if(!waiting){dismissed=false;if($('playerStartDialog').open)$('playerStartDialog').close();if(justStarted&&!window.MobilePages?.focus('game'))document.querySelector('.stage')?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});return;}
-  const ready=DreamRoom.canPlay(),edition=game.mode||'gift',numeric=edition!=='gift';$('beginPlayer').disabled=!ready;
+  const ready=DreamRoom.canPlay(),edition=game.mode||'gift',numeric=edition!=='gift';$('beginPlayer').disabled=numeric&&window.NumericStart?false:!ready;
+  $('readyPlayer').disabled=false;$('readyPlayer').textContent=numeric?(game.poolProposal?.status==='pending'?'查看待确认的九个数值':'设置九个数值 · 提交开始'):'准备开始游戏 ✦';
   $('beginPlayer').textContent=!numeric?'开始游戏 ✦':game.poolProposal?.status==='pending'?'查看待确认方案':'开始 · 设置本局数值';$('editPoolBeforeStart').hidden=!numeric||!!window.NumericStart;$('editPoolBeforeStart').disabled=!ready;
   $('startNickname').textContent=($('roomMyName')?.textContent||'').replace(/^我的昵称：/,'')+'，轮到你追梦啦！';
   $('startConnection').textContent=ready?'礼物可由房主预设或调整，不保证随机结果。开始后先选一只保留箱，再决定接受报价还是继续。':'正在等待房主同步，连接就绪后即可开始。';
@@ -20,10 +21,10 @@
  window.PlayerStart={init(fn){dispatch=fn;
   document.body.insertAdjacentHTML('beforeend',`<dialog id="playerStartDialog" class="player-start-dialog" aria-labelledby="playerStartTitle"><span class="eyebrow">YOUR DREAM STARTS HERE</span><img src="assets/bear-negotiator.png" alt="熊二等待你开始"><h2 id="playerStartTitle">准备好，开启你的梦想！</h2><p id="startNickname"></p><p id="startConnection" role="status"></p><button id="editPoolBeforeStart" class="secondary" type="button" hidden>先设置本局数值</button><button id="beginPlayer" class="enamel" type="button">开始游戏 ✦</button><button id="laterPlayer" class="secondary" type="button">稍后开始</button></dialog>`);
   document.querySelector('.decision-actions').insertAdjacentHTML('afterbegin','<button id="readyPlayer" class="enamel" type="button" hidden>准备开始游戏 ✦</button>');
-  $('beginPlayer').onclick=()=>{if(!player()||current?.started!==false||!DreamRoom.canPlay()||$('beginPlayer').disabled)return;if((current.mode||'gift')!=='gift'&&window.NumericStart){dismissed=true;$('playerStartDialog').close();NumericStart.open();return;}$('beginPlayer').disabled=true;dispatch('start');};
+  $('beginPlayer').onclick=()=>{if(!player()||current?.started!==false||$('beginPlayer').disabled)return;if((current.mode||'gift')!=='gift'&&window.NumericStart){dismissed=true;$('playerStartDialog').close();NumericStart.open();return;}if(!DreamRoom.canPlay())return;$('beginPlayer').disabled=true;dispatch('start');};
   const later=()=>{dismissed=true;$('playerStartDialog').close();};$('laterPlayer').onclick=later;$('playerStartDialog').oncancel=e=>{e.preventDefault();later();};
   $('editPoolBeforeStart').onclick=()=>{if(!player()||current?.started!==false||(current.mode||'gift')==='gift'||!DreamRoom.canPlay())return;dismissed=true;$('playerStartDialog').close();if(window.NumericStart)NumericStart.open();else window.GameModes?.openSettings();};
-  $('readyPlayer').onclick=()=>{dismissed=false;render(current);};
+  $('readyPlayer').onclick=()=>{if(!player()||current?.started!==false)return;if((current.mode||'gift')!=='gift'&&window.NumericStart){dismissed=true;if($('playerStartDialog').open)$('playerStartDialog').close();NumericStart.open();return;}dismissed=false;render(current);};
   document.addEventListener('close',()=>queueMicrotask(show),true);
  },render};
 })();

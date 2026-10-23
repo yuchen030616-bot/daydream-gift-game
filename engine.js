@@ -8,7 +8,7 @@
   const QUOTE_ROUNDS=Object.freeze([2,4,6,7]);
   function numeric(value,mode,max){
     if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>max||(mode==='drink'&&!Number.isInteger(value)))throw new RangeError(mode==='drink'?'小口数须为范围内整数':'金额须为范围内非负数');
-    return Math.round(value)||0;
+    return (mode==='money'?Math.round(value/10)*10:Math.round(value))||0;
   }
   function numericGift(value,mode){return {name:`${value} ${mode==='money'?'元':'小口'}`,icon:mode==='money'?'🪙':'🥤',score:value,value,kind:mode};}
   function makePool(configuration){
@@ -20,7 +20,7 @@
     const min=numeric(rawMin,mode,limit),max=numeric(rawMax,mode,limit);
     if(rawMin>rawMax)throw new RangeError('最小值不能大于最大值');
     const explicit=configuration.values!==undefined;
-    const values=configuration.values??Array.from({length:9},(_,i)=>Math.round(min+(max-min)*i/8));
+    const values=configuration.values??Array.from({length:9},(_,i)=>mode==='money'?min+(max-min)*i/8:Math.round(min+(max-min)*i/8));
     if(!Array.isArray(values)||values.length!==9)throw new RangeError('请设置九个箱子的数值');
     const normalized=values.map(value=>{const result=numeric(value,mode,explicit?rawMax:max);if(value<(explicit?rawMin:min))throw new RangeError('箱子数值不能低于最小值');return result;});
     return {mode,config:{mode,min,max,values:normalized},gifts:normalized.map(value=>Object.freeze(numericGift(value,mode)))};
@@ -135,7 +135,7 @@
         const random=this.rng();if(!Number.isFinite(random)||random<0||random>=1)throw new RangeError('随机数须在 [0, 1) 内');
         const mean=remaining.reduce((sum,index)=>sum+this.gifts[index].value,0)/remaining.length;
         const factor=Math.max(.56,Math.min(.84,.60+this.round*.02+this.rejects*.012+(random*2-1)*.018));
-        const rounded=this.mode==='money'?Math.round(mean*factor):Math.floor(mean*factor+1e-9);
+        const rounded=this.mode==='money'?Math.round(mean*factor/10)*10:Math.floor(mean*factor+1e-9);
         const value=Math.max(this.config.min,Math.min(this.config.max,rounded));
         this.offer=manualOffer?null:{...numericGift(value,this.mode),factor,reason:'试探报价'};
         this.phase=manualOffer?'pricing':'offer';return this.gifts[this.boxes[i]];

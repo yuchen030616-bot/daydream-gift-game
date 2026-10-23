@@ -26,7 +26,7 @@
    const names=[topic(alias),topic(alias)+'/ping'];
    const promise=new Promise((yes,no)=>{
     let timer,done=false;
-    const finish=error=>{if(done)return;done=true;clearTimeout(timer);tasks.delete(cancel);if(error){entry.subscribed.delete(client);no(error);}else{entry.subscribed.add(client);yes();}};
+    const finish=error=>{if(done)return;done=true;clearTimeout(timer);tasks.delete(cancel);if(error){entry.subscribed.delete(client);entry.error=error;no(error);}else{entry.subscribed.add(client);entry.failures.delete(client);entry.ready?.();yes();}};
     const cancel=()=>finish(Error('房间码订阅已关闭。'));tasks.add(cancel);
     timer=setTimeout(()=>finish(Error('房间码订阅确认超时，请重新连接。')),4000);
     try{client.subscribe(names,{qos:0},(error,granted)=>{
@@ -37,25 +37,29 @@
    });
    entry.pending.set(client,promise);promise.then(()=>entry.pending.delete(client),()=>entry.pending.delete(client));return promise;
   }
+  function trySubscribe(client,alias,entry){
+   if(closed||listeners.get(alias)!==entry||!client.connected)return;
+   clearTimeout(entry.retries.get(client));entry.retries.delete(client);
+   subscribe(client,alias,entry).catch(error=>{entry.error=error;if(closed||listeners.get(alias)!==entry||!client.connected)return;const attempts=(entry.failures.get(client)||0)+1;entry.failures.set(client,attempts);entry.retries.set(client,setTimeout(()=>trySubscribe(client,alias,entry),Math.min(8000,1000*2**Math.min(attempts-1,3))));});
+  }
   for(const url of relays){
    const client=mqtt.connect(url,{clientId:'dream_lobby_'+C.id(),...(url.includes('shiftr.io')?{username:'public',password:'public'}:{}),clean:true,connectTimeout:8000,reconnectPeriod:4000,keepalive:25});clients.push(client);
-   client.on('connect',()=>{if(closed)return;for(const[alias,entry]of listeners)subscribe(client,alias,entry).catch(error=>{entry.error=error;});readyResolve();});
-   const disconnected=()=>{for(const entry of listeners.values())entry.subscribed.delete(client);};client.on('offline',disconnected);client.on('close',disconnected);
+   client.on('connect',()=>{if(closed)return;for(const[alias,entry]of listeners)trySubscribe(client,alias,entry);readyResolve();});
+   const disconnected=()=>{for(const entry of listeners.values()){entry.subscribed.delete(client);clearTimeout(entry.retries.get(client));entry.retries.delete(client);}};client.on('offline',disconnected);client.on('close',disconnected);
    client.on('message',(name,raw)=>{if(closed)return;const alias=name.split('/')[3],entry=listeners.get(alias);if(entry)entry.handler(raw.toString(),name.endsWith('/ping'));});client.on('error',()=>{});
   }
   return {ready,listen(alias,handler){
-   const entry={handler,subscribed:new Set(),pending:new Map()};listeners.set(alias,entry);
-   const online=clients.filter(c=>c.connected);if(!online.length)return Promise.reject(Error('房间码通道已断开，请重新连接。'));
-   return new Promise((yes,no)=>{let failed=0;for(const c of online)subscribe(c,alias,entry).then(yes,error=>{if(++failed===online.length)no(error);});});
-  },unlisten(alias){listeners.delete(alias);for(const c of clients)if(c.connected)c.unsubscribe([topic(alias),topic(alias)+'/ping']);},send(alias,data,retain=false,ping=false){const entry=listeners.get(alias);for(const c of clients)if(c.connected&&entry?.subscribed.has(c))c.publish(topic(alias)+(ping?'/ping':''),data,{qos:0,retain});},close(){closed=true;for(const cancel of [...tasks])cancel();listeners.clear();clients.forEach(c=>c.end(true));}};
+   const entry={handler,subscribed:new Set(),pending:new Map(),retries:new Map(),failures:new Map()};listeners.set(alias,entry);
+   // A refused first relay must not discard another relay that connects later.
+   // One deadline covers connection and SUBACK; reconnect events join this waiter.
+   return new Promise((yes,no)=>{let done=false,timer;const finish=error=>{if(done)return;done=true;clearTimeout(timer);tasks.delete(cancel);error?no(error):yes();};const cancel=()=>finish(Error('房间码订阅已关闭。'));entry.cancel=cancel;entry.ready=()=>finish();tasks.add(cancel);timer=setTimeout(()=>finish(entry.error||Error('房间码通道连接或订阅超时，将重试。')),10000);if(closed)return cancel();for(const c of clients)if(c.connected)trySubscribe(c,alias,entry);});
+  },unlisten(alias){const entry=listeners.get(alias);listeners.delete(alias);entry?.cancel?.();for(const timer of entry?.retries.values()||[])clearTimeout(timer);for(const c of clients)if(c.connected)c.unsubscribe([topic(alias),topic(alias)+'/ping']);},send(alias,data,retain=false,ping=false){const entry=listeners.get(alias);for(const c of clients)if(c.connected&&entry?.subscribed.has(c))c.publish(topic(alias)+(ping?'/ping':''),data,{qos:0,retain});},close(){closed=true;for(const cancel of [...tasks])cancel();for(const entry of listeners.values())for(const timer of entry.retries.values())clearTimeout(timer);listeners.clear();clients.forEach(c=>c.end(true));}};
  }
  const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
- async function connected(ch){let timer;try{await Promise.race([ch.ready,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('房间码通道暂未连接，请稍后重试。')),10000);})]);}finally{clearTimeout(timer);}}
  async function resolve(alias){
   if(!isAlias(alias))throw Error('请输入4位数字房间码');
   const ch=channel();let finish,timer,collect,retry,request=null,requestedAt=Infinity;const records=new Map();
   try{
-   await connected(ch);
    const found=new Promise(yes=>{finish=yes;});
    await ch.listen(alias,async(raw,ping)=>{if(ping)return;const expected=mono()-requestedAt<6000?request:null;const d=await record(raw,alias,expected);if(!d||d.request===request&&mono()-requestedAt>=6000)return;records.set(d.code,d);if(!collect)collect=setTimeout(()=>finish([...records.values()].sort((a,b)=>a.code.localeCompare(b.code))[0]),350);});
    request=RoomCore.nonce();requestedAt=mono();
@@ -85,7 +89,7 @@
     if(!closed)throw Error('暂时无法分配房间码，请重新连接。');
    }finally{allocating=false;}
   }
-  try{await connected(ch);await allocate(identity.alias);heartbeat=setInterval(()=>announce().catch(()=>{}),7000);}
+  try{await allocate(identity.alias);heartbeat=setInterval(()=>announce().catch(()=>{}),7000);}
   catch(e){closed=true;ch.close();throw e;}
   return {close(){closed=true;clearInterval(heartbeat);ch.close();},get alias(){return alias;}};
  }

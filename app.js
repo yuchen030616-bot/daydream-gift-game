@@ -7,13 +7,14 @@ const reshuffleWaiting=()=>game.reshuffleRequest?.status==='pending';
 const poolWaiting=()=>game.poolProposal?.status==='pending'&&game.poolProposal.gameId===game.gameId;
 function normalizeMoneyState(state){
  if(state.mode!=='money')return false;
- const before=JSON.stringify([state.config,state.gifts||state.pool,state.offer,state.result,state.original,state.lastDeclinedOffer,state.comparison]);
- const source=state.gifts||state.pool,next=DreamEngine.makePool({mode:'money',min:Math.round(state.config.min),max:Math.round(state.config.max),values:source.map(g=>Math.round(g.value??g.score))});
- state.config=next.config;state.gifts=next.gifts;
+ const before=JSON.stringify([state.config,state.gifts||state.pool,state.offer,state.result,state.original,state.lastDeclinedOffer,state.comparison,state.poolProposal]);
+ const source=state.gifts||state.pool,next=DreamEngine.makePool({mode:'money',min:DreamEngine.moneyGift(state.config.min).value,max:DreamEngine.moneyGift(state.config.max).value,values:source.map(g=>DreamEngine.moneyGift(g.value??g.score).value)});
+ state.config=next.config;state.gifts=next.gifts;if(state.pool)state.pool=next.gifts.map(g=>({name:g.name,icon:g.icon,kind:g.kind,value:g.value}));
+ if(state.poolProposal?.config?.mode==='money'){const c=state.poolProposal.config;state.poolProposal={...state.poolProposal,config:DreamEngine.makePool({mode:'money',min:DreamEngine.moneyGift(c.min).value,max:DreamEngine.moneyGift(c.max).value,values:c.values.map(v=>DreamEngine.moneyGift(v).value)}).config};}
  const roundGift=g=>g?{...g,...DreamEngine.moneyGift(g.value??g.score)}:g;
  for(const key of ['offer','result','original','lastDeclinedOffer'])if(state[key])state[key]=roundGift(state[key]);
  if(state.comparison){state.comparison={...state.comparison,alternative:roundGift(state.comparison.alternative)};if(state.result){const a=state.result.value,b=state.comparison.alternative.value;state.comparison.verdict=a>b?'win':a<b?'loss':'even';}}
- return before!==JSON.stringify([state.config,state.gifts,state.offer,state.result,state.original,state.lastDeclinedOffer,state.comparison]);
+ return before!==JSON.stringify([state.config,state.gifts,state.offer,state.result,state.original,state.lastDeclinedOffer,state.comparison,state.poolProposal]);
 }
 function art(g,cls='gift-art'){if(g.kind==='money'||g.kind==='drink')return `<span class="${cls} numeric-art kind-${g.kind}"><strong>${Number(g.value)}</strong><small>${g.kind==='money'?'元':'小口'}</small></span>`;const visual=g.items?.[0]||g;const i=DreamEngine.GIFTS.findIndex(x=>x.name===visual.name);return `<img class="${cls}" src="assets/${assets[i]}" alt="${visual.name}">`;}
 function tone(win=false){if(muted)return;try{const a=new(window.AudioContext||window.webkitAudioContext)();[0,1,2].forEach((n)=>{const o=a.createOscillator(),v=a.createGain();o.connect(v);v.connect(a.destination);o.frequency.value=(win?523:330)*[1,1.25,1.5][n];v.gain.setValueAtTime(.035,a.currentTime+n*.1);v.gain.exponentialRampToValueAtTime(.001,a.currentTime+n*.1+.35);o.start(a.currentTime+n*.1);o.stop(a.currentTime+n*.1+.4)});setTimeout(()=>a.close(),1000)}catch{}}
@@ -34,7 +35,7 @@ $('reset').disabled=busy||shuffling()||!!window.DreamRoom&&!['host','solo'].incl
 const shownReserve=game.finalChoice?game.result:game.original;if(shownReserve)$('myBox').innerHTML=`${art(shownReserve)}<strong>${shownReserve.name}</strong><span>${game.selected+1}号梦盒 · ${game.finalChoice==='swap'?'已换箱':game.finalChoice==='keep'?'保留原箱':'原箱已揭晓'}</span>`;
 $('swap').hidden=p!=='final';const other=game.boxes.findIndex((_,i)=>i!==game.selected&&!game.opened.includes(i));$('swap').textContent=other>=0?`换成 ${other+1} 号箱 · 立即开箱`:'换成另一箱';if(p==='final'){$('reveal').textContent=`保留 ${game.selected+1} 号箱 · 立即开箱`;$('hint').textContent=`原箱是 ${game.selected+1} 号，另一箱是 ${other+1} 号。选择后立即揭晓，不能再换。`;}
 if(game.finalChoice)$('history').innerHTML=`<li><span>最终选择</span><strong>${game.finalChoice==='swap'?`换箱 ${game.initialSelected+1} → ${game.selected+1} 号`:`保留 ${game.selected+1} 号箱`}</strong></li>`+$('history').innerHTML;
-if(game.started===false){$('phase').textContent='等待主播开始游戏';$('hint').textContent='主播确认开始后，本局才会开放选箱。';}
+if(game.started===false){$('phase').textContent=game.mode==='gift'?'等待主播开始游戏':'先设置九个数值';$('hint').textContent=game.mode==='gift'?'主播确认开始后，本局才会开放选箱。':'先设置九个数值，房主确认后自动洗牌，再开放选箱。';}
 if(poolWaiting()){$('phase').textContent='等待房主最终确认';$('hint').textContent='九个数值已提交。房主可修改并确认，之后自动洗牌。';}
 if(reshuffleWaiting())$('hint').textContent='洗牌申请正在等待房主审批；当前宝箱、报价和进度暂时保留。';
 window.GameModes?.decorate(game);

@@ -26,6 +26,8 @@
   for(const button of document.querySelectorAll('#mobileMenuDialog [data-mobile-page]')){button.disabled=button.dataset.mobilePage==='result'&&current?.phase!=='ended';button.setAttribute('aria-current',button.dataset.mobilePage===page?'page':'false');}
   for(const [target,source]of [['mobileMenuCounter','reconsiderQuote'],['mobileMenuReshuffle','askReshuffle'],['mobileMenuStart','openNumericStart']]){const original=source==='openNumericStart'&&(!$(source)||$(source).hidden)?$('readyPlayer'):$(source);$(target).hidden=!original||original.hidden;$(target).disabled=!original||original.disabled;$(target).textContent=original?.textContent||'';}
   const selected=current?.selected;$('mobileRoundInfo').textContent=selected==null?'先留下你的一只梦想箱':`保留 ${String(selected+1).padStart(2,'0')} 号 · 已开 ${current.round||0} / 7 箱`;
+  const observer=role()==='watch';$('mobileRoleHint').hidden=!observer;$('mobileRoleHint').textContent='当前是围观席 · 只能看。开始游戏请使用房主发出的主播操作链接。';
+  $('mobileModeHint').textContent=['host','solo'].includes(role())?'切换主播版、普通版或喝酒版':'当前为'+(role()==='player'?'主播操作席':'围观席')+'，游戏模式由房主更换。';
   const numeric=current?.mode==='money'||current?.mode==='drink';$('mobileSetupSummary').textContent=numeric?(role()==='host'?'玩家点击开始后先提交九项数值，你可修改并最终确认；确认后双方直接洗牌。':'点击开始后，在弹窗选好九项数值；房主确认后直接洗牌进入游戏。'):'主播版使用九款梦想礼物，开箱、报价与结算都会自动切换。';$('mobileSettingsStart').hidden=!numeric||!$('openNumericStart')||$('openNumericStart').hidden;$('mobileSettingsStart').disabled=$('openNumericStart')?.disabled??true;
   $('mobileQuickQuote').textContent=['pricing','offer'].includes(current?.phase)?'查看本轮报价':'等待下一口价';
   $('mobileQuickQuote').disabled=!['pricing','offer'].includes(current?.phase);const more=$('mobileQuoteMore');more.hidden=!['player','solo'].includes(role())||current?.phase!=='offer';const gate=$('mobileStartGate'),start=$('openNumericStart')&&!$('openNumericStart').hidden?$('openNumericStart'):$('readyPlayer');gate.hidden=!start||start.hidden;gate.disabled=!start||start.disabled;gate.textContent=start?.textContent||'';
@@ -34,14 +36,19 @@
  function set(view){if(!names[view])return false;page=view;refresh();return true;}
  function focus(view){if(!enabled())return false;if(view==='result'&&current?.phase!=='ended')return false;set(view);if($('mobileMenuDialog').open)$('mobileMenuDialog').close();return true;}
  function go(view){
-  if(!enabled()||!names[view]||current?.stageEvent?.kind==='shuffle'&&current.stageEvent.active||view==='result'&&current?.phase!=='ended')return false;
+  if(!ready||!names[view]||current?.stageEvent?.kind==='shuffle'&&current.stageEvent.active||view==='result'&&current?.phase!=='ended')return false;
   set(view);window.QuotePopup?.pause();if($('mobileMenuDialog').open)$('mobileMenuDialog').close();
   if(view==='room')$('roomPanel').hidden=false;
   if(view==='deal'&&!$('viewQuote').hidden)$('viewQuote').click();
+  if(!enabled()){
+   if(view==='settings'&&window.GameModes?.openSwitcher){window.GameModes.openSwitcher();return true;}
+   const target={room:'#roomPanel',game:current?.phase==='final'?'#finalShowdown':'.stage',deal:'.decision',result:'#settlement',collection:'.prize-panel',record:'.right-column',settings:current?.mode!=='gift'?'#modeSetup':'.tools',banter:'#theatreControls'}[view];
+   document.querySelector(target)?.scrollIntoView({behavior:'smooth',block:'start'});
+  }
   return true;
  }
  function menu(){
-  if(!enabled()||current?.stageEvent?.kind==='shuffle'&&current.stageEvent.active)return;
+  if(!ready||current?.stageEvent?.kind==='shuffle'&&current.stageEvent.active)return;
   window.QuotePopup?.pause();if(document.querySelector('dialog[open]:not(#mobileMenuDialog)'))return;refresh();$('mobileMenuDialog').showModal();$('mobileCloseMenu').focus();
  }
  function render(game){
@@ -60,7 +67,9 @@
   if(ready)return;api=options;media=matchMedia('(max-width:768px)');
   document.querySelector('.brand').insertAdjacentHTML('afterend','<strong id="mobilePageTitle" class="mobile-only">游戏</strong>');
   document.querySelector('.app').insertAdjacentHTML('beforeend','<section id="mobileUtility" class="panel mobile-only"><h2>游戏设置</h2><p>工具、玩法与本机管理</p><p id="mobileSetupSummary"></p><button id="mobileSettingsStart" class="secondary" type="button" hidden>设置本局数值</button></section>');
+  $('mobileUtility').insertAdjacentHTML('afterbegin','<button id="mobileModeSwitch" class="secondary" type="button">更换游戏模式</button><p id="mobileModeHint"></p>');
   document.querySelector('.box-tray').insertAdjacentHTML('beforebegin','<p id="mobileRoundInfo" class="mobile-only"></p><button id="mobileStartGate" class="mobile-only enamel" type="button" hidden></button>');
+  $('mobileStartGate').insertAdjacentHTML('beforebegin','<p id="mobileRoleHint" class="mobile-only" hidden></p>');
   document.querySelector('.stage').insertAdjacentHTML('beforeend','<div id="mobileGameActions" class="mobile-only"><button id="mobileQuickQuote" class="secondary" type="button">查看本轮报价</button><button id="mobileQuickMenu" class="secondary" type="button">我的目录</button></div>');
   document.querySelector('.quote-popup-actions').insertAdjacentHTML('afterend','<button id="mobileQuoteMore" class="mobile-only secondary" type="button">更多谈判 · 再谈谈 / 洗牌</button>');
   $('settlement').insertAdjacentHTML('afterbegin','<img class="mobile-result-bear mobile-only" src="assets/bear-negotiator.png" alt="熊二陪你看结算">');
@@ -72,6 +81,7 @@
   for(const b of document.querySelectorAll('#mobileMenuDialog [data-mobile-page]'))b.onclick=()=>go(b.dataset.mobilePage);
   for(const [target,source]of [['mobileMenuCounter','reconsiderQuote'],['mobileMenuReshuffle','askReshuffle'],['mobileMenuStart','openNumericStart']])$(target).onclick=()=>{const button=source==='openNumericStart'&&(!$(source)||$(source).hidden)?$('readyPlayer'):$(source);if(!button||button.hidden||button.disabled)return;$('mobileMenuDialog').close();button.click();};
   $('mobileSettingsStart').onclick=()=>{const original=$('openNumericStart');if(original&&!original.hidden&&!original.disabled)original.click();};
+  $('mobileModeSwitch').onclick=()=>window.GameModes?.openSwitcher();
   $('mobileStartGate').onclick=()=>{const original=$('openNumericStart')&&!$('openNumericStart').hidden?$('openNumericStart'):$('readyPlayer');if(original&&!original.hidden&&!original.disabled)original.click();};
   $('soloMode').addEventListener('click',()=>go('game'));
   $('mobileUtility').addEventListener('click',e=>{if(e.target.closest?.('#reset,#rules,#adminEntry'))window.QuotePopup?.pause();});

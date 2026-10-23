@@ -22,7 +22,7 @@
   for(const input of setup.querySelectorAll('input'))input.disabled=!enabled;
   $('rejectNumericStart').hidden=!host||!pending(g);$('rejectNumericStart').disabled=!available(g)||!connected()||sending;
   $('numericStartTitle').textContent=host?'确认本局九个数值':g.mode==='money'?'先选本局金额':'先选自愿小口数';
-  $('numericStartHint').textContent=g.mode==='drink'?'小口数0至5，0代表不喝。自愿参与，可随时跳过。':'金额会四舍五入为整数元。可以自动生成，也可以逐项修改。';
+  $('numericStartHint').textContent=g.mode==='drink'?'小口数0至5，0代表不喝。自愿参与，可随时跳过。':'金额会就近四舍五入为整十元。可以自动生成，也可以逐项修改。';
   if(!connected())message('连接已中断，草稿已保留。恢复连接后可重试；已发送的方案以房主同步结果为准。',true);
   else if(lastError)message(lastError,true);
   else if(waiting)message(sending?'正在发送方案，等待同步确认，请勿重复提交。':'方案已提交，等待房主调整并确认。');
@@ -46,7 +46,7 @@
   if(sending&&(g.gameId!==sendingGame||authority(g)!==sendingAuthority)){sending=false;lastError='';}
   const entry=$('openNumericStart');if(entry){const eligible=available(g)&&(role()==='host'?pending(g):['player','solo'].includes(role()));entry.hidden=!eligible;entry.disabled=api.isBusy();entry.textContent=role()==='host'?'待确认 · 审核玩家九个数值':pending(g)||sending?'查看已提交数值 · 等待房主':'设置九个数值 · 提交开始';}
   if(dialog.open){
-   if(!available(g)||role()==='host'&&!pending(g)){dialog.close();restore();return;}
+   if(!available(g)||!['host','player','solo'].includes(role())||role()==='host'&&!pending(g)){dialog.close();restore();return;}
    if(loaded!==key(g)&&g.poolProposal?.config){saveDraft();window.GameModes.setDraft(g.poolProposal.config);loaded=key(g);}
    controls();return;
   }
