@@ -17,3 +17,4 @@
  .quote-popup-actions button{min-height:62px;padding:14px 10px}
  #quotePending{margin-top:12px;padding:9px 10px;font-size:13px;line-height:1.7}
 }
+#quotePopupGift:has(.numeric-art){justify-content:center}#quotePopupGift .numeric-art{display:none}#quotePopupGift>strong{overflow-wrap:anywhere}
