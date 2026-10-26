@@ -252,6 +252,8 @@ function applyHostQuote(bundle){
 }
 window.DreamRoom?.init({render,reset,act,
  quote:applyHostQuote,
+ getLocalHandoffSettings:()=>window.RoomHandoffSettings?.read()||{},
+ applyLocalHandoffSettings:settings=>window.RoomHandoffSettings?.apply(settings)!==false,
  prepareSeriesRound:config=>{
   if(window.DreamRoom?.role!=='host'||busy||shuffling())throw Error('请由房主在动画结束后确认下一局');
   const next=DreamEngine.makePool(config||game.config);if(next.config.mode!=='money')throw Error('计分对战使用普通版金额');

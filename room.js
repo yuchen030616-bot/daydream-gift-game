@@ -8,16 +8,81 @@
   const room={role:'solo',code:'',clients:[],peers:new Map(),rev:0,lastAt:0,lastHost:0,playerId:null,playerSeen:0,pending:null,acks:[],seen:new Set(),id:C.id(),ready:false,working:false,closed:false};
   let adapter,timer,receiveChain=Promise.resolve(),sendChain=Promise.resolve(),heartbeatAt=0,owner=null,cipher,lastBroadcastAt=0,renderKey='';
   const storageKey=code=>'daydream.owner.'+code;
-  let guestIdentity=null,guestIdentityPersistent=true;const memoryIdentities=new Map();
+  let guestIdentity=null,guestExchange=null,guestIdentityPersistent=true;const memoryIdentities=new Map(),memoryExchanges=new Map();
+  let authorityPin=null,stagedTransfer=null,commitRetry=null,handoffStarting=false;
+  room.handoff=null;const hostConsents=new Set();
+  const actorPeer=peer=>(room.role==='host'?owner?.actorAliases:room.actorAliases)?.[peer]||peer;
+  const hostActor=()=>room.role==='host'?(owner?.actorPeer||room.code):(room.hostActor||room.code);
+  const networkPeer=peer=>Object.entries(owner?.actorAliases||{}).find(([,actor])=>actor===peer)?.[0]||peer;
+  function pinAccept(auth,commit=false){if(!auth)return false;if(authorityPin&&(auth.seq<authorityPin.seq||auth.seq===authorityPin.seq&&auth.chainId!==authorityPin.chainId||auth.seq>authorityPin.seq&&authorityPin.seq>0&&!auth.prefixIds.includes(authorityPin.chainId)))return false;if(!authorityPin||auth.seq>authorityPin.seq){authorityPin=auth;store.set('daydream.authority.'+room.code,auth);}return true;}
+  const hostPacket=async(type,data,identity=owner)=>({type,pub:identity.pub,chain:identity.chain||[],...await C.sign({...data,code:room.code},identity.privateKey)});
+  async function digest(value){const text=encodeURIComponent(JSON.stringify(value)).replace(/%([0-9A-F]{2})/g,(_,hex)=>String.fromCharCode(parseInt(hex,16))),bytes=Uint8Array.from(text,c=>c.charCodeAt(0));return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(v=>v.toString(16).padStart(2,'0')).join('');}
+  function rememberConsent(id){hostConsents.add(id);try{sessionStorage.setItem('daydream.hostConsents.'+room.code,JSON.stringify([...hostConsents].slice(-32)));}catch{}}
+  function forgetConsent(id){hostConsents.delete(id);try{sessionStorage.setItem('daydream.hostConsents.'+room.code,JSON.stringify([...hostConsents].slice(-32)));}catch{}}
+  const handoffContext=(id,peer)=>'daydream-handoff-v1:'+room.code+':'+id+':'+peer;
+  const publicHandoff=()=>room.handoff?{id:room.handoff.id,target:room.handoff.target,name:room.handoff.name,phase:room.handoff.phase}:null;
+  async function beginHandoff(request){
+    if(room.role!=='host'||room.closed||room.working||room.handoff||handoffStarting||!request?.consented)return false;
+    const peer=room.peers.get(request.peer);if(!peer?.exchangePub||peer.pub!==request.pub||peer.keyCode!==request.keyCode||Date.now()-peer.at>24000)return false;
+    if(seriesState()?.status==='active'){request.status='queued';save();await broadcast();adapter.render();note('房主交接已排队，本轮结算后执行，不更改当前轮庄家。');return true;}
+    handoffStarting=true;
+    try{
+      const id=C.id(),aliases={...(owner.actorAliases||{}),[guestIdentity.code]:owner.actorPeer||room.code};
+      const oldPlayer=room.peers.get(room.playerId),player=request.peer===room.playerId||!oldPlayer?.pub?{peer:guestIdentity.code,pub:guestIdentity.pub,keyCode:guestIdentity.code}:{peer:room.playerId,pub:oldPlayer.pub,keyCode:oldPlayer.keyCode};
+      const transfer={code:room.code,id,requestId:request.id,target:request.peer,saved:adapter.save(),rev:room.rev+1,alias:room.alias||null,series:owner.series||null,seriesPool:owner.seriesPool||null,seriesGameId:owner.seriesGameId||null,seriesPlayer:owner.seriesPlayer||null,pendingNextSeries:request.nextSeries||null,actorAliases:aliases,actorPeer:actorPeer(request.peer),operatorGrant:{...player,epoch:C.nonce()},activePlayer:player.peer,seatLockGameId:owner.seatLockGameId||null,settings:await adapter.getLocalHandoffSettings?.()||{}};
+      const sealed=await C.sealFor(transfer,peer.exchangePub,handoffContext(id,request.peer)),hash=await digest(sealed);
+      const offer=await hostPacket('handoffOffer',{id,requestId:request.id,target:request.peer,rev:room.rev,at:Date.now(),hash,sealed});
+      room.handoff={id,target:request.peer,name:peer.name,phase:'awaiting_ack',requestId:request.id,pub:peer.pub,keyCode:peer.keyCode,transfer,offer,hash,deadline:monotonic()+12000,lastSend:monotonic()};request.status='offered';save();await publish(offer);await broadcast();update();adapter.render();note('正在等待新房主持久化确认，确认前原房主继续负责。');return true;
+    }catch{request.status='pending';note('交接资料未能准备，请保持双方在线后重试。');return false;}finally{handoffStarting=false;}
+  }
+  function resumeHandoff(){if(room.role==='host'&&!room.handoff&&seriesState()?.status!=='active'){const request=room.bankerRequests.find(r=>r.status==='queued'&&r.consented);if(request)beginHandoff(request).catch(()=>{});}}
+  async function inviteHost(peer,nextSeries=null){
+    if(room.role!=='host'||room.closed||room.working||room.handoff||!online())return false;
+    const member=room.peers.get(peer);if(!member?.pub||!member.exchangePub||member.keyCode!==peer||Date.now()-member.at>24000)return false;
+    room.bankerRequests=room.bankerRequests.filter(r=>r.peer!==peer).slice(-63);room.bankerRequests.push({id:C.id(),peer,name:member.name,pub:member.pub,keyCode:member.keyCode,status:'invited',consented:false,...(nextSeries?{nextSeries}: {})});save();await broadcast();adapter.render();return true;
+  }
+  async function acceptHostInvitation(id,accepted){
+    const invitation=room.bankerRequests.find(r=>r.id===id&&r.peer===room.id&&r.status==='invited');if(room.role==='host'||!invitation||typeof accepted!=='boolean'||!online()||!hostFresh()||!guestIdentity)return false;
+    if(accepted)rememberConsent(id);await publish(await guestPacket({type:'hostInviteReply',id:C.id(),peer:room.id,invitation:id,accepted,at:hostNow(),rev:room.rev,sync:room.syncNonce,proof:room.syncProof}));return true;
+  }
+  async function handleHostHandoff(packet){
+    const auth=await C.authority(packet,room.code),data=await C.verify(packet,packet.pub,room.code);if(!auth||!data||data.code!==room.code)return;
+    if(packet.type==='handoffCommit'){
+      const chain=[...(packet.chain||[]),data.certificate],next=await C.authority({pub:data.targetPub,chain},room.code);
+      const priorAuthority=authorityPin?.chainId;
+      if(!next||next.seq!==auth.seq+1||JSON.parse(data.certificate.data).transferId!==data.id||JSON.parse(data.certificate.data).toKeyCode!==data.target||!pinAccept(next))return;
+      if(priorAuthority!==next.chainId&&room.role!=='host'){room.lastAt=0;room.clockSynced=false;room.syncNonce='';room.syncProof='';}
+      if(room.role==='host'&&owner?.lastTransfer===data.id){await publish(await guestPacket({type:'handoffReady',id:C.id(),peer:guestIdentity.code,transferId:data.id,at:hostNow()}));return;}
+      const staged=stagedTransfer||store.get(storageKey(room.code));if(!staged?.staged||staged.transferId!==data.id||staged.transferHash!==data.hash||guestIdentity?.code!==data.target){await hello();return;}
+      const incoming={...staged,staged:false,pub:guestIdentity.pub,keyCode:guestIdentity.code,privateKey:guestIdentity.privateKey,token:guestIdentity.token,chain,lastTransfer:data.id,expires:Date.now()+86400000};delete incoming.previousSettings;
+      try{adapter.restore(incoming.saved);if(!store.set(storageKey(room.code),incoming))throw Error('不能保存新房主状态');owner=incoming;forgetConsent(incoming.requestId);stagedTransfer=null;room.role='host';room.id=guestIdentity.code;room.token=null;room.rev=incoming.rev;room.playerId=incoming.activePlayer;room.playerSeen=0;room.operatorGrant=incoming.operatorGrant;room.bankerGrant=null;room.bankerRequests=[];room.bankerRequestAt.clear();room.handoff=null;room.peers.clear();room.challenges.clear();room.clockSynced=false;room.ready=true;room.alias=isAlias(incoming.alias)?incoming.alias:room.alias;canonicalizeHostUrl();store.set('daydream.lease.'+room.code,{id:room.id,at:Date.now()});startLobby();claimAlias();await publish(await guestPacket({type:'handoffReady',id:C.id(),peer:guestIdentity.code,transferId:data.id,at:hostNow()}));await broadcast();update();adapter.render();note('接任成功，你现在是房主和庄家；原房主已退出管理席。');}catch{note('接任状态未能启用，请保持页面打开并检查本地存储。');}return;
+    }
+    if(!pinAccept(auth)||data.target!==guestIdentity?.code)return;
+    if(packet.type==='handoffCancel'){
+      if(stagedTransfer?.transferId!==data.id)return;await adapter.applyLocalHandoffSettings?.(stagedTransfer.previousSettings||{});store.set(storageKey(room.code),null);stagedTransfer=null;note('房主交接已取消，原房主继续负责。');return;
+    }
+    if(packet.type!=='handoffOffer'||!hostConsents.has(data.requestId)||Math.abs(hostNow()-data.at)>24000||data.rev<room.rev)return;
+    try{
+      if(stagedTransfer?.transferId===data.id&&stagedTransfer.transferHash===data.hash){await publish(await guestPacket({type:'handoffAck',id:C.id(),peer:room.id,transferId:data.id,hash:data.hash,rev:data.rev,at:hostNow(),sync:room.syncNonce,proof:room.syncProof}));return;}
+      if(await digest(data.sealed)!==data.hash)throw Error('交接资料不完整');const transfer=await C.openFor(data.sealed,guestExchange.privateKey,handoffContext(data.id,data.target));
+      if(transfer.id!==data.id||transfer.target!==guestIdentity.code||transfer.code!==room.code||transfer.rev!==data.rev+1||!transfer.saved?.game||!Array.isArray(transfer.saved.game.boxes)||transfer.saved.game.boxes.length!==9)throw Error('交接资料不匹配');
+      const previousSettings=await adapter.getLocalHandoffSettings?.()||{};
+      if(adapter.applyLocalHandoffSettings&&await adapter.applyLocalHandoffSettings(transfer.settings)===false)throw Error('本机设置保存失败');
+      const staged={...transfer,staged:true,transferId:data.id,transferHash:data.hash,pub:guestIdentity.pub,keyCode:guestIdentity.code,privateKey:guestIdentity.privateKey,token:guestIdentity.token,previousSettings,expires:Date.now()+86400000};
+      if(!store.set(storageKey(room.code),staged)){await adapter.applyLocalHandoffSettings?.(previousSettings);throw Error('交接状态不能保存');}stagedTransfer=staged;
+      await publish(await guestPacket({type:'handoffAck',id:C.id(),peer:room.id,transferId:data.id,hash:data.hash,rev:data.rev,at:hostNow(),sync:room.syncNonce,proof:room.syncProof}));note('接任资料已保存，等待原房主提交最终交接。');
+    }catch(e){note(e.message||'无法保存交接资料，原房主继续负责。');}
+  }
   room.nextPlayers=[];room.operatorGrant=null;
   Object.assign(room,{bankerGrant:null,bankerRequests:[],bankerAcks:[],quotePending:null,bankerRequestAt:new Map()});
   const publicBankerRequests=()=>room.bankerRequests.map(({id,peer,name,status})=>({id,peer,name,status}));
   const publicBankerGrant=()=>{const g=owner?.bankerGrant;return g?{peer:g.peer,pub:g.pub,keyCode:g.keyCode,epoch:g.epoch,name:validName(g.name)||'匿名'}:null;};
   const bankerIdentity=()=>!!guestIdentity&&room.bankerGrant?.peer===room.id&&room.bankerGrant.pub===guestIdentity.pub&&room.bankerGrant.keyCode===guestIdentity.code;
-  const canQuote=()=>!room.closed&&(room.role==='host'?!owner?.bankerGrant&&online():room.role!=='solo'&&bankerIdentity()&&room.ready&&hostFresh()&&online()&&validNonce(room.syncProof)&&!room.quotePending);
-  const canRequestBanker=()=>!['solo','host'].includes(room.role)&&!!guestIdentity&&room.ready&&hostFresh()&&online()&&!bankerIdentity()&&!room.bankerRequests.some(r=>r.peer===room.id&&['sending','pending'].includes(r.status));
-  const currentBanker=()=>{const grant=room.role==='host'?owner?.bankerGrant:room.bankerGrant;return grant?{peer:grant.peer,name:validName(grant.name)||'匿名',host:false}:{peer:room.code,name:room.role==='host'?room.name:room.members.find(p=>p.role==='host')?.name||'房主',host:true};};
+  const canQuote=()=>!room.closed&&!room.handoff&&!handoffStarting&&room.role==='host'&&room.playerId!==room.id&&online();
+  const canRequestBanker=()=>!['solo','host'].includes(room.role)&&!!guestIdentity&&room.ready&&hostFresh()&&online()&&!room.bankerRequests.some(r=>r.peer===room.id&&['sending','pending','queued','offered','invited'].includes(r.status));
+  const currentBanker=()=>{const grant=room.role==='host'?owner?.bankerGrant:room.bankerGrant;return grant?{peer:actorPeer(grant.peer),name:validName(grant.name)||'匿名',host:false}:{peer:hostActor(),name:room.role==='host'?room.name:room.members.find(p=>p.role==='host')?.name||'房主',host:true};};
   const seriesState=()=>{try{return window.SeriesCore?.publicState(room.role==='host'?owner?.series:room.series)||null;}catch{return null;}};
+  async function resumeNextSeries(){if(room.role!=='host'||room.working||!owner?.pendingNextSeries)return;const intended=owner.pendingNextSeries,state=seriesState();if(state?.id!==intended.id||state.round!==intended.round||state.status!=='awaiting_banker'){owner.pendingNextSeries=null;save();return;}if(!room.peers.get(room.playerId))return;owner.pendingNextSeries=null;if(!await confirmSeriesNext(hostActor()))owner.pendingNextSeries=intended;else note('接任成功，已按原房主确认自动准备下一局；金额奖池保持。');}
   const bankerChangeAllowed=peer=>{const s=seriesState();return !s||s.status!=='active'||s.banker?.peer===peer;};
   function syncSeriesState(){
     if(room.role!=='host'||!owner?.series||!window.SeriesCore)return false;
@@ -27,7 +92,7 @@
     if(!owner.seriesPool&&game.started===true&&game.phase==='select'&&game.selected===null&&game.round===0&&game.config?.mode==='money'&&Array.isArray(game.config.values)&&game.config.values.length===9){owner.seriesPool=JSON.parse(JSON.stringify(game.config));owner.seriesGameId=game.gameId;owner.seatLockGameId=game.gameId;changed=true;}
     if(game.gameId!==owner.seriesGameId)return changed;
     if(game.phase!=='ended'||room.playerId!==owner.seriesPlayer?.peer)return changed;
-    try{const player=room.peers.get(room.playerId);owner.series=window.SeriesCore.recordSettlement(owner.series,game,{player:{peer:room.playerId,name:player?.name||owner.seriesPlayer.name},banker:currentBanker()});changed=changed||owner.series.status!==state.status||owner.series.records.length!==state.records.length;}catch{note('本轮计分身份未能核对，请由房主检查本轮玩家与庄家。');}return changed;
+    try{const player=room.peers.get(room.playerId);owner.series=window.SeriesCore.recordSettlement(owner.series,game,{player:{peer:actorPeer(room.playerId),name:player?.name||owner.seriesPlayer.name},banker:state.banker});changed=changed||owner.series.status!==state.status||owner.series.records.length!==state.records.length;}catch{note('本轮计分身份未能核对，请由房主检查本轮玩家与庄家。');}return changed;
   }
   async function createSeries(config){
     if(room.role!=='host'||room.closed||room.working||!online()||(gameState().mode||'gift')!=='money'||!seatWindow(gameState())||!window.SeriesCore||!config||typeof config!=='object'||Array.isArray(config)||Object.keys(config).some(k=>!['rounds','entryFee'].includes(k)))return false;
@@ -37,14 +102,15 @@
   async function confirmSeriesNext(peerId){
     const series=seriesState(),player=room.peers.get(room.playerId);
     if(room.role!=='host'||room.closed||room.working||!online()||series?.status!=='awaiting_banker'||!player||Date.now()-player.at>24000||typeof adapter.prepareSeriesRound!=='function')return false;
-    const isHost=peerId===room.code||peerId===room.id,target=isHost?null:room.peers.get(peerId);
-    if(!isHost&&(peerId===room.playerId||!target?.pub||target.keyCode!==peerId||Date.now()-target.at>24000))return false;
-    const banker={peer:isHost?room.code:peerId,name:isHost?room.name:target.name};let next;try{next=window.SeriesCore.nextRound(owner.series,banker);}catch{return false;}
+    const targetPeer=networkPeer(peerId),isHost=peerId===hostActor()||peerId===room.id,target=isHost?null:room.peers.get(targetPeer);
+    if(!isHost&&(targetPeer===room.playerId||!target?.pub||target.keyCode!==targetPeer||Date.now()-target.at>24000))return false;
+    const banker={peer:isHost?hostActor():actorPeer(targetPeer),name:isHost?room.name:target.name};let next;try{next=window.SeriesCore.nextRound(owner.series,banker);}catch{return false;}
+    if(!isHost){const invited=await inviteHost(targetPeer,{id:series.id,round:series.round});if(invited)note('已邀请下一局庄家接任房主；对方接受后自动准备下一局。');return invited;}
     room.working=true;
     try{
       await adapter.prepareSeriesRound(owner.seriesPool?JSON.parse(JSON.stringify(owner.seriesPool)):null);
       owner.series=next;owner.seriesGameId=gameState().gameId;owner.seriesPlayer={peer:room.playerId,name:player.name};owner.seatLockGameId=gameState().gameId;
-      owner.bankerGrant=isHost?null:{peer:peerId,pub:target.pub,keyCode:target.keyCode,epoch:C.nonce(),name:target.name};owner.bankerSeen=[];room.bankerGrant=owner.bankerGrant&&{...owner.bankerGrant};room.rev++;save();await broadcast();update();adapter.render();return true;
+      owner.bankerGrant=isHost?null:{peer:targetPeer,pub:target.pub,keyCode:target.keyCode,epoch:C.nonce(),name:target.name};owner.bankerSeen=[];room.bankerGrant=owner.bankerGrant&&{...owner.bankerGrant};room.rev++;save();await broadcast();update();adapter.render();return true;
     }catch{return false;}finally{room.working=false;}
   }
   async function endSeries(){
@@ -60,17 +126,15 @@
   }
   async function requestBanker(){
     if(room.role==='host')return reclaimBanker();if(!canRequestBanker())return false;
-    const data={type:'bankerRequest',id:C.id(),peer:room.id,at:hostNow(),rev:room.rev,nonce:C.nonce(),sync:room.syncNonce,proof:room.syncProof};
+    const data={type:'bankerRequest',id:C.id(),peer:room.id,at:hostNow(),rev:room.rev,nonce:C.nonce(),sync:room.syncNonce,proof:room.syncProof,acceptHost:true};rememberConsent(data.id);
     room.bankerRequests.push({id:data.id,peer:room.id,name:room.name,status:'sending'});adapter.render();
     try{await publish(await guestPacket(data));note('庄家申请已发送，等待房主同意。');return true;}catch{room.bankerRequests=room.bankerRequests.filter(r=>r.id!==data.id);adapter.render();return false;}
   }
   async function decideBanker(id,approved){
     if(room.role!=='host'||room.closed||room.working||typeof approved!=='boolean'||!online())return false;
-    const request=room.bankerRequests.find(r=>r.id===id&&r.status==='pending'),peer=request&&room.peers.get(request.peer);
+    const request=room.bankerRequests.find(r=>r.id===id&&['pending','queued'].includes(r.status)),peer=request&&room.peers.get(request.peer);
     if(!request||approved&&(!peer||Date.now()-peer.at>24000||peer.pub!==request.pub||peer.keyCode!==request.keyCode))return false;
-    if(approved&&!bankerChangeAllowed(request.peer)){note('本局庄家已确认，请结算后更换。');return false;}
-    if(approved){owner.bankerGrant={peer:request.peer,pub:request.pub,keyCode:request.keyCode,epoch:C.nonce(),name:peer.name};owner.bankerSeen=[];room.bankerGrant={...owner.bankerGrant};for(const r of room.bankerRequests)if(r.status==='pending')r.status=r===request?'approved':'declined';}
-    else request.status='declined';
+    if(approved)return beginHandoff(request);else request.status='declined';
     room.rev++;save();await broadcast();update();adapter.render();return true;
   }
   async function reclaimBanker(){
@@ -79,9 +143,8 @@
   }
   async function assignBanker(peerId){
     if(room.role!=='host'||room.closed||room.working||!online()||!bankerChangeAllowed(peerId===room.id?room.code:peerId))return false;
-    if(peerId===room.id||peerId===room.code)return reclaimBanker();if(peerId===room.playerId)return false;
-    const peer=room.peers.get(peerId);if(!peer?.pub||peer.keyCode!==peerId||Date.now()-peer.at>24000)return false;
-    const request={id:C.id(),peer:peerId,name:peer.name,status:'pending',pub:peer.pub,keyCode:peer.keyCode};room.bankerRequests.push(request);room.bankerRequests=room.bankerRequests.slice(-64);return decideBanker(request.id,true);
+    if(peerId===room.id||peerId===hostActor())return reclaimBanker();peerId=networkPeer(peerId);if(peerId===room.playerId)return false;
+    return inviteHost(peerId);
   }
   async function submitQuote(payload){
     if(!canQuote()||gameState().phase!=='pricing'||gameState().reshuffleRequest?.status==='pending')return false;
@@ -112,7 +175,7 @@
     if(approve&&(!room.peers.has(request.peer)||Date.now()-room.peers.get(request.peer).at>24000))return false;
     room.working=true;
     try{
-      if(approve){adapter.reset();owner.operatorGrant={peer:request.peer,pub:request.pub,keyCode:request.keyCode,epoch:C.nonce()};owner.seatLockGameId=gameState().gameId;room.operatorGrant={...owner.operatorGrant};room.playerId=request.peer;room.playerSeen=Date.now();room.pending=null;room.seen.clear();for(const r of room.nextPlayers)if(r.status==='pending')r.status=r===request?'approved':'declined';}
+      if(approve){adapter.reset();owner.bankerGrant=null;room.bankerGrant=null;owner.operatorGrant={peer:request.peer,pub:request.pub,keyCode:request.keyCode,epoch:C.nonce()};owner.seatLockGameId=gameState().gameId;room.operatorGrant={...owner.operatorGrant};room.playerId=request.peer;room.playerSeen=Date.now();room.pending=null;room.seen.clear();for(const r of room.nextPlayers)if(r.status==='pending')r.status=r===request?'approved':'declined';}
       else request.status='declined';
       room.rev++;save();await broadcast();update();adapter.render();return true;
     }finally{room.working=false;}
@@ -126,7 +189,7 @@
   let lobbyHandle=null,lobbyKey='';
   function closeLobby(){lobbyHandle?.close();lobbyHandle=null;lobbyKey='';}
   function updateLobby(){if(!lobbyHandle||room.closed)return;const state=gameState(),key=JSON.stringify([room.alias,room.name,room.count,state.mode,state.phase]);if(key!==lobbyKey){lobbyKey=key;Promise.resolve(lobbyHandle.update()).catch(()=>{});}}
-  function startLobby(){closeLobby();if(room.role!=='host'||!window.RoomLobby?.advertise)return;try{lobbyHandle=window.RoomLobby.advertise({code:room.code,pub:owner.pub,privateKey:owner.privateKey},()=>{const state=gameState();return {alias:room.alias||null,hostName:room.name,count:room.count||1,mode:state.mode||'gift',phase:state.phase};});}catch{}}
+  function startLobby(){closeLobby();if(room.role!=='host'||!window.RoomLobby?.advertise)return;try{lobbyHandle=window.RoomLobby.advertise({code:room.code,pub:owner.pub,privateKey:owner.privateKey,chain:owner.chain||[]},()=>{const state=gameState();return {alias:room.alias||null,hostName:room.name,count:room.count||1,mode:state.mode||'gift',phase:state.phase};});}catch{}}
   const monotonic=()=>typeof performance!=='undefined'?performance.now():Date.now();
   const validNonce=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{22}$/.test(value);
   Object.assign(room,{hostOffset:0,clockSynced:false,syncNonce:'',syncIssued:0,syncProof:'',challenges:new Map(),receivedStates:0,applyErrors:0});
@@ -142,7 +205,7 @@
     const retry=missing=>{if(epoch!==directoryEpoch||room.closed||room.role!=='host')return;directoryWorking=false;directoryError=missing?'房间码组件未加载，请刷新网页更新；游戏与已有链接不受影响。':'房间码通道暂不可用，正在自动重试；游戏与已有链接不受影响。';const delay=Math.min(30000,2000*2**Math.min(directoryAttempt++,4));directoryRetry=setTimeout(()=>{directoryRetry=null;if(epoch===directoryEpoch)claimAlias();},delay);update();note(directoryError);};
     if(typeof window.RoomDirectory?.claim!=='function'){retry(true);return;}
     directoryWorking=true;directoryError='';update();
-    Promise.resolve().then(()=>window.RoomDirectory.claim({code,pub:claimOwner.pub,privateKey:claimOwner.privateKey,...(isAlias(claimOwner.alias)?{alias:claimOwner.alias}:{})},alias=>{
+    Promise.resolve().then(()=>window.RoomDirectory.claim({code,pub:claimOwner.pub,privateKey:claimOwner.privateKey,chain:claimOwner.chain||[],...(isAlias(claimOwner.alias)?{alias:claimOwner.alias}:{})},alias=>{
       if(epoch!==directoryEpoch||room.closed||room.role!=='host'||room.code!==code||!isAlias(alias))return;
       announced=true;room.alias=alias;claimOwner.alias=alias;save();update();broadcast();
     })).then(handle=>{if(epoch!==directoryEpoch||room.closed){handle.close();return;}if(!announced){handle.close();throw Error('房间码未确认');}const previous=directoryHandle;directoryHandle=handle;if(previous!==handle)previous?.close();directoryWorking=false;directoryAttempt=0;directoryError='';update();}).catch(()=>retry(false));
@@ -160,7 +223,7 @@
   room.members=[];
   let nameDialog,nameInput,nameError,nameResolve;
   function diagnostics(){
-    return ['版本：20261027-live','角色：'+room.role,'房间信息：'+(!!room.code),'操作链接：'+(!!room.token),
+    return ['版本：20261027-hostfix','角色：'+room.role,'房间信息：'+(!!room.code),'操作链接：'+(!!room.token),
       '安全加密：'+(!!globalThis.crypto?.subtle),'WebSocket：'+(typeof WebSocket!=='undefined'),
       '房间码目录：'+(room.role!=='host'?'由房主维护':directoryWorking?'正在连接或生成':directoryError?'暂不可用，自动重试中':isAlias(room.alias)?'已生成':'等待生成'),
       ...relays.map((url,i)=>{const c=room.clients[i];return (url.includes('shiftr.io')?'兼容线路（443）':'线路'+(i+1))+'：'+(!c?'未启用':c.roomSubscribed?'已连接，可收发':c.connected?(c.roomError?'已连接，订阅重试中':'已连接，等待订阅'):c.roomError?'连接失败，正在重试':'正在连接');}),
@@ -208,10 +271,11 @@
     nameInput.value=room.name;nameError.textContent='';nameDialog.returnValue='';
     const result=new Promise(resolve=>{nameResolve=resolve;});nameDialog.showModal();nameInput.focus();return result;
   }
-  function roster(){return [{name:room.name||'匿名',role:'host'},...Array.from(room.peers,([id,p])=>({id,name:p.name||'匿名',role:id===room.playerId?'player':'watch',invitable:!!p.pub&&p.keyCode===id&&Date.now()-p.at<24000&&id!==room.playerId}))];}
+  function roster(){return [{name:room.name||'匿名',role:'host'},...Array.from(room.peers,([id,p])=>({id,name:p.name||'匿名',role:id===room.playerId?'player':'watch',invitable:!!p.pub&&p.keyCode===id&&Date.now()-p.at<24000&&id!==room.playerId,handoffInvitable:!!p.pub&&!!p.exchangePub&&p.keyCode===id&&Date.now()-p.at<24000}))];}
   function note(s){$('roomNotice').textContent=s;}
   function linked(role){const u=new URL(role==='player'?'player.html':'watch.html',location.href);u.search='';u.hash=new URLSearchParams({room:room.code,...(isAlias(room.alias)?{code:room.alias}:{}),...(role==='player'?owner.operatorGrant?{request:'1'}:{play:owner.token}:{view:'1'})}).toString();return u.href;}
-  function canPlay(){return room.role==='solo'||room.role==='player'&&room.ready&&hostFresh()&&room.playerId===room.id&&!room.pending;}
+  function canonicalizeHostUrl(){const url=new URL('index.html',location.href);url.search='';url.hash=new URLSearchParams({room:room.code,...(isAlias(room.alias)?{code:room.alias}:{})}).toString();try{if(typeof history!=='undefined'&&typeof history.replaceState==='function'){history.replaceState(null,'',url.href);return true;}}catch{}if(typeof location.replace==='function'){location.replace(url.href);return true;}return false;}
+  function canPlay(){return room.role==='solo'||room.role==='player'&&room.ready&&hostFresh()&&room.playerId===room.id&&!room.pending&&!room.handoff;}
   function update(){
     document.body.dataset.roomRole=room.role;
     const active=room.role!=='solo',host=room.role==='host',actor=(gameState()?.mode||'gift')==='gift'?'主播':'玩家';
@@ -231,6 +295,7 @@
     $('roomIntro').textContent=$('roomIntro').textContent.replaceAll('主播',actor);
     if(host){$('roomLink').value=linked('player');$('watchLink').value=linked('watch');}
     if(active&&Date.now()-room.started>25000&&(!online||!host&&!fresh))note('暂未连上房间。请确认房主保持页面打开，再点“重新连接”；公共联机通道受网络影响，当前进度不会显示为已同步。');
+    else if(active&&online&&(host||fresh)&&$('roomNotice').textContent.startsWith('暂未连上房间。'))note(host?'房间连接已恢复。':'房间同步已恢复。');
     const nextRenderKey=room.role+':'+canPlay()+':'+canQuote()+':'+(host?JSON.stringify(roster()):'');if(nextRenderKey!==renderKey){renderKey=nextRenderKey;adapter?.render();}
   }
   function save(){if(room.role!=='host')return;owner.bankerRequests=room.bankerRequests.map(r=>({...r}));owner.saved=adapter.save();owner.rev=room.rev;owner.expires=Date.now()+86400000;if(!store.set(storageKey(room.code),owner))note('当前浏览器无法保存房间，关闭房主页面后无法恢复本局。');}
@@ -238,18 +303,22 @@
   function broadcast(){if(room.role!=='host'||room.closed)return;const now=Date.now();for(const[id,p]of room.peers)if(now-p.at>24000)room.peers.delete(id);if(room.playerId&&now-room.playerSeen>24000)room.playerId=null;room.count=1+room.peers.size;room.lastHost=now;
     for(const[id,c]of room.challenges)if(monotonic()-c.issued>30000)room.challenges.delete(id);
     const syncReplies=Array.from(room.challenges,([peer,c])=>({peer,nonce:c.nonce,challenge:c.challenge}));
-    updateLobby();lastBroadcastAt=Math.max(now,lastBroadcastAt+1);const data={code:room.code,alias:isAlias(room.alias)?room.alias:null,at:lastBroadcastAt,rev:room.rev,state:adapter.publicState(),playerId:room.playerId,count:room.count,acks:room.acks,members:roster(),syncReplies,operatorGrant:owner.operatorGrant||null,seatAvailable:seatAvailable(),nextPlayers:publicRequests(),bankerGrant:publicBankerGrant(),bankerRequests:publicBankerRequests(),bankerAcks:room.bankerAcks,series:seriesState(),seriesConfigured:!!owner.seriesPool};
-    return C.sign(data,owner.privateKey).then(signed=>publish({type:'state',pub:owner.pub,...signed},true));
+    updateLobby();lastBroadcastAt=Math.max(now,lastBroadcastAt+1);owner.lastBroadcastAt=lastBroadcastAt;owner.activePlayer=room.playerId;store.set(storageKey(room.code),owner);const data={code:room.code,alias:isAlias(room.alias)?room.alias:null,at:lastBroadcastAt,rev:room.rev,state:adapter.publicState(),playerId:room.playerId,count:room.count,acks:room.acks,members:roster(),syncReplies,operatorGrant:owner.operatorGrant||null,seatAvailable:seatAvailable(),nextPlayers:publicRequests(),bankerGrant:publicBankerGrant(),bankerRequests:publicBankerRequests(),bankerAcks:room.bankerAcks,series:seriesState(),seriesConfigured:!!owner.seriesPool,handoff:publicHandoff(),hostActor:owner.actorPeer||room.code,actorAliases:owner.actorAliases||{}};
+    return C.sign(data,owner.privateKey).then(signed=>publish({type:'state',pub:owner.pub,chain:owner.chain||[],...signed},true));
   }
-  async function hello(){if(room.role==='solo'||!cipher)return;if(room.role==='host')return broadcast();ensureSync();const data={type:'presence',id:room.id,at:hostNow(),role:room.role,name:room.name||'匿名',sync:room.syncNonce,...(room.syncProof?{proof:room.syncProof}:{}),...(guestIdentity&&room.operatorGrant?{grant:room.operatorGrant.epoch}:{})};return publish(guestIdentity?await guestPacket(data):{data,auth:room.token?await C.mac(data,room.token):null});}
+  async function hello(){if(room.role==='solo'||!cipher)return;if(room.role==='host')return broadcast();ensureSync();const data={type:'presence',id:room.id,at:hostNow(),role:room.role,name:room.name||'匿名',sync:room.syncNonce,...(room.syncProof?{proof:room.syncProof}:{}),...(guestExchange?{exchangePub:guestExchange.pub}:{}),...(guestIdentity&&room.operatorGrant?{grant:room.operatorGrant.epoch}:{})};return publish(guestIdentity?await guestPacket(data):{data,auth:room.token?await C.mac(data,room.token):null});}
   async function receive(raw){
     let p=await cipher.open(raw);const now=Date.now();let principal=null;
+    if(['handoffOffer','handoffCommit','handoffCancel'].includes(p.type)){await handleHostHandoff(p);return;}
     if(p.type==='guest'){
-      try{if(typeof p.pub!=='string'||p.pub.length>150||!C.valid(p.keyCode))return;const d=await C.verify(p,p.pub,p.keyCode);if(!d||d.room!==room.code||!['presence','nextPlayer','action','bankerRequest','bankerAction'].includes(d.type)||(d.type==='presence'?d.id:d.peer)!==p.keyCode)return;principal={pub:p.pub,keyCode:p.keyCode};p={data:d,auth:p.auth};}catch{return;}
+      try{if(typeof p.pub!=='string'||p.pub.length>150||!C.valid(p.keyCode))return;const d=await C.verify(p,p.pub,p.keyCode);if(!d||d.room!==room.code||!['presence','nextPlayer','action','bankerRequest','bankerAction','hostInviteReply','handoffAck','handoffReady'].includes(d.type)||(d.type==='presence'?d.id:d.peer)!==p.keyCode)return;principal={pub:p.pub,keyCode:p.keyCode};p={data:d,auth:p.auth};}catch{return;}
     }
+    if(p.data?.type==='handoffReady'&&principal&&commitRetry?.id===p.data.transferId&&principal.keyCode===commitRetry.target){commitRetry=null;room.handoff=null;note('房主交接完成，新房主已启用。');update();adapter.render();return;}
     if(p.type==='state'){
       if(room.role==='host')return;
-      const d=await C.verify(p,p.pub,room.code);if(!d||d.code!==room.code)return;
+      const incomingAuthority=await C.authority(p,room.code),oldAuthority=authorityPin?.chainId;
+      const d=await C.verify(p,p.pub,room.code);if(!d||d.code!==room.code||!pinAccept(incomingAuthority))return;
+      if(oldAuthority&&oldAuthority!==incomingAuthority.chainId){room.lastAt=0;room.clockSynced=false;room.syncNonce='';room.syncProof='';}
       if(!Number.isFinite(d.at)||!Number.isInteger(d.rev)||d.rev<room.rev||d.at<=room.lastAt)return;
       room.receivedStates++;
       const reply=Array.isArray(d.syncReplies)&&d.syncReplies.slice(0,100).find(c=>c.peer===room.id&&c.nonce===room.syncNonce&&validNonce(c.challenge));
@@ -260,15 +329,17 @@
       if(changed){try{adapter.loadPublic(d.state);}catch{room.applyErrors++;update();return;}}
       room.rev=d.rev;room.lastAt=d.at;room.lastHost=now;room.lastHostMono=monotonic();room.playerId=d.playerId;room.count=d.count;room.ready=true;
       room.series=d.series||null;room.seriesConfigured=d.seriesConfigured===true;
+      room.handoff=d.handoff||null;room.hostActor=d.hostActor||room.code;room.actorAliases=d.actorAliases||{};
+      if(commitRetry&&incomingAuthority.seq>=(commitRetry.seq||0)){commitRetry=null;room.handoff=null;}
       const previousRole=room.role;room.operatorGrant=d.operatorGrant||null;room.seatAvailable=d.seatAvailable===true;
       const previousBanker=room.bankerGrant?.epoch;room.bankerGrant=d.bankerGrant||null;
-      room.bankerRequests=Array.isArray(d.bankerRequests)?d.bankerRequests.slice(0,64).filter(r=>r&&typeof r.id==='string'&&typeof r.peer==='string'&&['pending','approved','declined'].includes(r.status)).map(r=>({id:r.id,peer:r.peer,status:r.status,name:validName(r.name)||'匿名'})):[];
+      room.bankerRequests=Array.isArray(d.bankerRequests)?d.bankerRequests.slice(0,64).filter(r=>r&&typeof r.id==='string'&&typeof r.peer==='string'&&['pending','approved','declined','invited','queued','offered'].includes(r.status)).map(r=>({id:r.id,peer:r.peer,status:r.status,name:validName(r.name)||'匿名'})):[];
       if(previousBanker!==room.bankerGrant?.epoch){room.quotePending=null;if(bankerIdentity())note('房主已同意，你现在负责报价；房间管理仍由房主负责。');}
       if(room.quotePending){const ack=Array.isArray(d.bankerAcks)&&d.bankerAcks.find(a=>a.id===room.quotePending.data.id);if(ack){room.quotePending=null;note(ack.accepted?'报价已同步。':'这份报价未被采用，请等待最新局面后重试。');}}
-      let identityChanged=false;
+      let identityChanged=false;if(oldAuthority&&oldAuthority!==incomingAuthority.chainId){room.syncNonce='';room.syncProof='';room.clockSynced=false;room.pending=null;identityChanged=true;}
       if(room.operatorGrant){room.role=guestIdentity&&room.operatorGrant.peer===guestIdentity.code&&room.operatorGrant.pub===guestIdentity.pub?'player':'watch';if(guestIdentity&&room.id!==guestIdentity.code){room.id=guestIdentity.code;room.syncNonce='';room.syncProof='';room.clockSynced=false;room.pending=null;identityChanged=true;}}
       if(room.joinIntent==='player'&&room.role==='watch')note('点击“申请上场”即可成为玩家；进行中的对局需等本局结束。');
-      room.nextPlayers=Array.isArray(d.nextPlayers)?d.nextPlayers.slice(0,100).filter(r=>r&&typeof r.id==='string'&&typeof r.peer==='string'&&typeof r.gameId==='string'&&['pending','approved','declined'].includes(r.status)).map(r=>({id:r.id,peer:r.peer,gameId:r.gameId,name:validName(r.name)||'匿名',status:r.status})):[];
+      room.nextPlayers=Array.isArray(d.nextPlayers)?d.nextPlayers.slice(0,100).filter(r=>r&&typeof r.id==='string'&&typeof r.peer==='string'&&typeof r.gameId==='string'&&['pending','approved','declined','invited','queued','offered'].includes(r.status)).map(r=>({id:r.id,peer:r.peer,gameId:r.gameId,name:validName(r.name)||'匿名',status:r.status})):[];
       if(isAlias(d.alias))room.alias=d.alias;
       room.members=Array.isArray(d.members)?d.members.slice(0,200).map(p=>({name:validName(p?.name)||'匿名',role:p?.role==='host'?'host':p?.role==='player'?'player':'watch'})):[{name:'匿名',role:'host'}];
       if(room.pending&&d.acks?.includes(room.pending.data.id)){if(['poolProposal','applyConfig'].includes(room.pending.data.action)&&d.state.started===false&&d.state.poolProposal?.status!=='pending')window.NumericStart?.failed?.('这次提交未被采用，草稿已保留，请重新提交给房主。');room.pending=null;note('已同步。');}
@@ -299,20 +370,39 @@
       // A time-skewed initial packet may request an echo, but cannot renew a seat.
       if(!fresh||sync&&!proof){if(newChallenge)await broadcast();return;}
       if(sync)challenge.confirmed=true;
-      const previous=room.peers.get(d.id),name=validName(d.name)||'匿名';room.peers.set(d.id,{at:now,name,...(principal?{pub:principal.pub,keyCode:principal.keyCode}:{})});
+      const previous=room.peers.get(d.id),name=validName(d.name)||'匿名';room.peers.set(d.id,{at:now,name,...(principal?{pub:principal.pub,keyCode:principal.keyCode,...(typeof d.exchangePub==='string'&&/^[A-Za-z0-9_-]{87}$/.test(d.exchangePub)?{exchangePub:d.exchangePub}:{})}:{})});
       if(playerAuth&&(!room.playerId||room.playerId===d.id||now-room.playerSeen>24000)){room.playerId=d.id;room.playerSeen=now;}
+      if(playerAuth&&owner?.pendingNextSeries)await resumeNextSeries();
       // Reply immediately on first arrival; heartbeat handles established peers.
       if(!room.knownPeers?.has(d.id)||previous?.name!==name){room.knownPeers??=new Set();room.knownPeers.add(d.id);await broadcast();update();}
       return;
     }
     if(!fresh)return;
+    if(d.type==='hostInviteReply'||d.type==='handoffAck'){
+      const peer=room.peers.get(d.peer),challenge=room.challenges.get(d.peer);
+      if(!principal||!peer||peer.pub!==principal.pub||Date.now()-peer.at>24000||!challenge?.confirmed||challenge.nonce!==d.sync||challenge.challenge!==d.proof)return;
+      if(d.type==='hostInviteReply'){
+        const request=room.bankerRequests.find(r=>r.id===d.invitation&&r.peer===d.peer&&r.status==='invited');if(!request||typeof d.accepted!=='boolean'||d.rev!==room.rev)return;
+        request.status=d.accepted?'pending':'declined';request.consented=d.accepted;if(d.accepted)await beginHandoff(request);else{save();await broadcast();adapter.render();}return;
+      }
+      const transfer=room.handoff;
+      if(!transfer||transfer.phase!=='awaiting_ack'||transfer.target!==d.peer||transfer.pub!==principal.pub||transfer.id!==d.transferId||transfer.hash!==d.hash||d.rev!==room.rev||transfer.transfer.rev!==room.rev+1)return;
+      const cert=await C.authorizeHost(owner,{pub:transfer.pub,keyCode:transfer.keyCode},{transferId:transfer.id,seq:(owner.chain||[]).length+1,actorPeer:transfer.transfer.actorPeer,at:Date.now()});
+      const commit=await hostPacket('handoffCommit',{id:transfer.id,target:transfer.target,targetPub:transfer.pub,hash:transfer.hash,certificate:cert,at:Date.now()}),auth=await C.authority({pub:transfer.pub,chain:[...(owner.chain||[]),cert]},room.code);
+      const marker={transferred:true,code:room.code,actorPeer:owner.actorPeer||room.code,targetPeer:transfer.target,commit,seq:auth.seq,expires:Date.now()+86400000};
+      if(!store.set(storageKey(room.code),marker)){note('无法保存原房主退位标记，交接暂停，原房主继续负责。');return;}
+      const publicGame=adapter.publicState(),nextOperator=transfer.transfer.operatorGrant;closeDirectory();store.set('daydream.lease.'+room.code,null);pinAccept(auth);
+      room.id=guestIdentity.code;room.role=nextOperator.peer===room.id?'player':'watch';room.token=null;room.operatorGrant=nextOperator;room.actorAliases=transfer.transfer.actorAliases;room.hostActor=transfer.transfer.actorPeer;room.playerId=nextOperator.peer;room.pending=null;room.bankerGrant=null;room.clockSynced=false;room.lastAt=0;room.syncNonce='';room.syncProof='';owner=null;
+      commitRetry={id:transfer.id,target:transfer.target,seq:auth.seq,packet:commit,lastSend:monotonic()};room.handoff={id:transfer.id,target:transfer.target,name:transfer.name,phase:'committing'};adapter.loadPublic(publicGame);await publish(commit,true);await hello();update();adapter.render();note('新房主已保存资料，正在等待启用确认；原房主已安全退出管理席。');return;
+    }
+    if(d.type==='bankerAction')return;
     if(d.type==='bankerRequest'||d.type==='bankerAction'){
       const peer=room.peers.get(d.peer),challenge=room.challenges.get(d.peer),proof=challenge?.confirmed&&challenge.nonce===d.sync&&challenge.challenge===d.proof&&monotonic()-challenge.issued<=30000;
       if(!principal||!/^[A-Za-z0-9_-]{16}$/.test(d.id)||!peer||peer.pub!==principal.pub||peer.keyCode!==principal.keyCode||now-peer.at>24000||!proof)return;
       if(d.type==='bankerRequest'){
-        if(room.working||d.rev!==room.rev||!validNonce(d.nonce)||room.bankerRequests.some(r=>r.id===d.id)||room.bankerRequests.some(r=>r.peer===d.peer&&r.status==='pending')||owner.bankerGrant?.peer===d.peer||room.bankerRequestAt.has(d.peer)&&now-room.bankerRequestAt.get(d.peer)<10000||room.bankerRequests.filter(r=>r.status==='pending').length>=64)return;
+        if(room.working||room.handoff||d.acceptHost!==true||d.rev!==room.rev||!validNonce(d.nonce)||room.bankerRequests.some(r=>r.id===d.id)||room.bankerRequests.some(r=>r.peer===d.peer&&r.status==='pending')||room.bankerRequestAt.has(d.peer)&&now-room.bankerRequestAt.get(d.peer)<10000||room.bankerRequests.filter(r=>r.status==='pending').length>=64)return;
         room.bankerRequests=room.bankerRequests.filter(r=>r.status==='pending'||r.peer!==d.peer).slice(-63);
-        room.bankerRequestAt.set(d.peer,now);room.bankerRequests.push({id:d.id,peer:d.peer,name:peer.name,status:'pending',pub:principal.pub,keyCode:principal.keyCode});save();await broadcast();update();adapter.render();return;
+        room.bankerRequestAt.set(d.peer,now);room.bankerRequests.push({id:d.id,peer:d.peer,name:peer.name,status:'pending',pub:principal.pub,keyCode:principal.keyCode,consented:true});save();await broadcast();update();adapter.render();return;
       }
       const grant=owner.bankerGrant;
       if(!grant||principal.pub!==grant.pub||principal.keyCode!==grant.keyCode||d.peer!==grant.peer||d.grant!==grant.epoch)return;
@@ -334,10 +424,10 @@
     if(d.type!=='action'||!actionAuth)return;
     if(room.seen.has(d.id)){await broadcast();return;}
     room.seen.add(d.id);if(room.seen.size>256)room.seen.delete(room.seen.values().next().value);
-    if(d.peer!==room.playerId||now-room.playerSeen>24000||d.rev!==room.rev||room.working){room.acks.push(d.id);room.acks=room.acks.slice(-16);await broadcast();return;}
+    if(d.peer!==room.playerId||now-room.playerSeen>24000||d.rev!==room.rev||room.working||room.handoff||handoffStarting){room.acks.push(d.id);room.acks=room.acks.slice(-16);await broadcast();return;}
     room.working=true;
     try{await adapter.act(d.action,d.index);}catch{note('主播的这次操作已过期，已同步当前进度。');}
-    finally{room.working=false;room.acks.push(d.id);room.acks=room.acks.slice(-16);room.rev++;const seriesChanged=syncSeriesState();save();await broadcast();update();if(seriesChanged)adapter.render();}
+    finally{room.working=false;room.acks.push(d.id);room.acks=room.acks.slice(-16);room.rev++;const seriesChanged=syncSeriesState();save();await broadcast();update();if(seriesChanged)adapter.render();resumeHandoff();}
   }
   function connect(){
     for(const url of relays){
@@ -361,6 +451,12 @@
     if(now-heartbeatAt>7000){heartbeatAt=now;hello();}
     if(room.pending&&now-room.pending.sent>10000){if(['poolProposal','applyConfig'].includes(room.pending.data.action))window.NumericStart?.failed?.('未收到房主确认，草稿已保留；连接恢复后请重试。');room.pending=null;note('未收到房主确认，请等待连接恢复后重试；不会在离线时自动开箱。');}
     if(room.quotePending&&now-room.quotePending.sent>10000){room.quotePending=null;note('未收到房主确认，请等待连接恢复后重新报价。');adapter?.render();}
+    if(room.role==='host'&&room.handoff?.phase==='awaiting_ack'){
+      const transfer=room.handoff;
+      if(monotonic()>transfer.deadline){room.handoff=null;const request=room.bankerRequests.find(r=>r.id===transfer.requestId);if(request)request.status='pending';hostPacket('handoffCancel',{id:transfer.id,target:transfer.target,at:now}).then(publish);save();broadcast();note('交接确认超时，原房主继续负责；双方在线后可重试。');adapter.render();}
+      else if(monotonic()-transfer.lastSend>2000){transfer.lastSend=monotonic();publish(transfer.offer);}
+    }
+    if(commitRetry&&monotonic()-commitRetry.lastSend>2000){commitRetry.lastSend=monotonic();publish(commitRetry.packet,true);}
     update();
   }
   async function start(code,token,forceWatch=false){
@@ -372,24 +468,29 @@
     if(ticket!==startTicket)return;
     code=C.normalize(code);
     closeDirectory();room.alias='';
-    const saved=store.get(storageKey(code));owner=!token&&!forceWatch&&saved&&saved.expires>Date.now()?saved:null;
+    const saved=store.get(storageKey(code));owner=!token&&!forceWatch&&saved&&!saved.transferred&&!saved.staged&&saved.expires>Date.now()?saved:null;
+    authorityPin=store.get('daydream.authority.'+code);stagedTransfer=saved?.staged?saved:null;commitRetry=saved?.transferred&&saved.commit?{id:JSON.parse(saved.commit.data).id,target:saved.targetPeer,seq:saved.seq,packet:saved.commit,lastSend:-Infinity}:null;room.handoff=null;
+    hostConsents.clear();try{for(const id of JSON.parse(sessionStorage.getItem('daydream.hostConsents.'+code))||[])hostConsents.add(id);}catch{}
     guestIdentity=null;room.nextPlayers=[];room.operatorGrant=owner?.operatorGrant||null;
     room.bankerGrant=owner?.bankerGrant||null;room.bankerRequests=Array.isArray(owner?.bankerRequests)?owner.bankerRequests.slice(-64).map(r=>({...r})):[];room.bankerAcks=[];room.quotePending=null;room.bankerRequestAt.clear();
     room.role=owner?'host':token?'player':'watch';room.code=code;room.token=token;room.started=Date.now();
-    if(room.role!=='host'){
+    {
       const key='daydream.guestIdentity.'+code;let stored=null;guestIdentityPersistent=true;
       try{stored=JSON.parse(sessionStorage.getItem(key));}catch{guestIdentityPersistent=false;}
       if(!stored)stored=memoryIdentities.get(code)||null;
       try{const probe={room:code,check:C.nonce()};if(!stored||!C.valid(stored.code)||!await C.verify(await C.sign(probe,stored.privateKey),stored.pub,stored.code))stored=null;}catch{stored=null;}
       guestIdentity=stored||await C.identity();memoryIdentities.set(code,guestIdentity);
       try{sessionStorage.setItem(key,JSON.stringify(guestIdentity));}catch{guestIdentityPersistent=false;}
-      room.id=guestIdentity.code;
+      if(room.role!=='host')room.id=guestIdentity.code;
+      let exchange=null;const exchangeKey='daydream.guestExchange.'+code;try{exchange=JSON.parse(sessionStorage.getItem(exchangeKey));}catch{}
+      exchange=exchange||memoryExchanges.get(code);if(!exchange||typeof exchange.pub!=='string'||!exchange.privateKey)exchange=await C.exchangeIdentity();guestExchange=exchange;memoryExchanges.set(code,exchange);try{sessionStorage.setItem(exchangeKey,JSON.stringify(exchange));}catch{}
     }
     if(room.role!=='host'&&!guestIdentity){try{const key='daydream.peer.'+code+'.'+room.role;room.id=sessionStorage.getItem(key)||room.id;sessionStorage.setItem(key,room.id);}catch{}}
     cipher=await new C.Cipher(code).init();room.topic=await C.topic(code);room.closed=false;
     if(owner){
+      const auth=await C.authority({pub:owner.pub,chain:owner.chain||[]},code);if(!pinAccept(auth)){owner=null;room.role='watch';throw Error('此房主页已交接，不能恢复过期房主权限');}owner.actorPeer??=code;owner.actorAliases??={};owner.bankerGrant=null;room.bankerGrant=null;
       const lease=store.get('daydream.lease.'+code);if(lease&&lease.id!==room.id&&Date.now()-lease.at<15000)throw Error('房间已在另一个房主页面打开，请先关闭那个页面，再重新连接');
-      room.rev=owner.rev||0;const migrated=adapter.restore(owner.saved);if(migrated){room.rev++;save();}room.ready=true;
+      room.rev=owner.rev||0;lastBroadcastAt=Math.max(lastBroadcastAt,owner.lastBroadcastAt||0);if(owner.operatorGrant&&owner.activePlayer===owner.operatorGrant.peer){room.playerId=owner.activePlayer;room.playerSeen=Date.now();}const migrated=adapter.restore(owner.saved);if(migrated){room.rev++;save();}room.ready=true;
     }else adapter.loadPublic({boxes:Array(9).fill(null),opened:[],selected:null,phase:'select',round:0,offer:null,result:null});
     update();connect();tick();timer=setInterval(tick,2000);
     note(room.role==='host'?'房主需保持此页在前台打开。多人联机为试用通道，页面会明确显示掉线状态；未打开的礼物不会发给主播或围观者。':'房间码可多人围观；主播操作权仅由操作链接提供。请保持页面前台打开，等待房主同步。');
@@ -405,13 +506,14 @@
   async function copy(input){const player=input===$('roomLink'),label=player?'开箱邀请':'围观邀请';if(room.role!=='host')return;if(!input.value||$('roomLink').value===$('watchLink').value){note('邀请链接尚未正确生成，请重试生成房间码后再复制。');return;}input.focus?.();input.select();input.setSelectionRange?.(0,input.value.length);try{await navigator.clipboard.writeText(input.value);note('已复制'+label+'，可以粘贴发送。');}catch{try{if(!document.execCommand('copy'))throw Error();note('已复制'+label+'，可以粘贴发送。');}catch{note('请长按上面的'+label+'链接，选择复制。');}}}
   window.DreamRoom={
     get role(){return room.role},get connected(){return room.role==='solo'||room.clients.some(c=>c.connected&&c.roomSubscribed)&&(room.role==='host'||room.ready&&hostFresh());},canPlay,
+    inviteHost,acceptHostInvitation,get hostInvitation(){return room.bankerRequests.find(r=>r.peer===room.id&&r.status==='invited')||null;},get handoffPending(){return !!room.handoff||handoffStarting;},get handoffStatus(){return publicHandoff();},
     createSeries,confirmSeriesNext,endSeries,get series(){return seriesState();},get seriesConfigured(){return room.role==='host'?!!owner?.seriesPool:room.seriesConfigured===true;},
-    requestBanker,decideBanker,reclaimBanker,assignBanker,submitQuote,get canQuote(){return canQuote();},get canRequestBanker(){return canRequestBanker();},get bankerRequests(){return publicBankerRequests();},get currentBanker(){return currentBanker();},get bankerRequestStatus(){return [...room.bankerRequests].reverse().find(r=>r.peer===room.id)?.status||null;},get seriesMembers(){return room.role==='host'?[{id:room.code,peer:room.code,name:room.name,role:'host'},...Array.from(room.peers,([id,p])=>({id,name:p.name,role:id===room.playerId?'player':'watch',at:p.at,pub:!!p.pub})).filter(p=>p.pub&&Date.now()-p.at<24000).map(({id,name,role})=>({id,peer:id,name,role}))]:[];},get pendingBox(){const d=room.pending?.data;return d?.action==='box'&&Number.isInteger(d.index)&&d.index>=0&&d.index<9?d.index:null;},
+    requestBanker,decideBanker,reclaimBanker,assignBanker,submitQuote,get canQuote(){return canQuote();},get canRequestBanker(){return canRequestBanker();},get bankerRequests(){return publicBankerRequests();},get currentBanker(){return currentBanker();},get bankerRequestStatus(){return [...room.bankerRequests].reverse().find(r=>r.peer===room.id)?.status||null;},get seriesMembers(){return room.role==='host'?[{id:hostActor(),peer:hostActor(),name:room.name,role:'host'},...Array.from(room.peers,([id,p])=>({id,name:p.name,role:id===room.playerId?'player':'watch',at:p.at,pub:!!p.pub})).filter(p=>p.pub&&Date.now()-p.at<24000).map(({id,name,role})=>({id,peer:actorPeer(id),name,role}))]:[];},get pendingBox(){const d=room.pending?.data;return d?.action==='box'&&Number.isInteger(d.index)&&d.index>=0&&d.index<9?d.index:null;},
     requestNextPlayer,decideNextPlayer,invitePlayer,get canInvitePlayer(){return room.role==='host'&&!room.closed&&!room.working&&online()&&seatAvailable();},get members(){return room.role==='host'?roster():room.members.map(p=>({...p}));},get nextPlayers(){return publicRequests();},get canRequestNextPlayer(){return canRequestNextPlayer();},get nextPlayerStatus(){return room.nextPlayers.find(r=>r.peer===room.id&&r.gameId===gameState().gameId)?.status||null;},
     get joinIntent(){return room.joinIntent;},get playerInvitation(){return room.role==='host'?linked('player'):null;},
-    request(action,index){if(room.role==='solo')return false;if(room.role==='host'){if(action==='reset'){if(room.working||seriesState()?.status==='active'){note('本轮计分对战进行中，请先结算或结束计分对战。');return true;}adapter.reset();room.rev++;save();broadcast();}return true;}if(!canPlay())return true;
-      const data={type:'action',id:C.id(),peer:room.id,at:hostNow(),rev:room.rev,action,index,...(guestIdentity&&room.operatorGrant?{grant:room.operatorGrant.epoch}:{})};room.pending={data,sent:Date.now()};update();(guestIdentity?guestPacket(data):C.mac(data,room.token).then(auth=>({data,auth}))).then(publish);note('操作已发送，等待房主确认…');return true;},
-    changed(){if(room.role==='host'){room.rev++;const seriesChanged=syncSeriesState();save();broadcast();if(seriesChanged)adapter.render();}},
+    request(action,index){if(room.role==='solo')return false;if(room.role==='host'){if(action==='reset'){if(room.working||room.handoff||handoffStarting||seriesState()?.status==='active'){note('交接或本轮计分对战进行中，请先完成交接、结算或结束对战。');return true;}adapter.reset();room.rev++;save();broadcast();}return true;}if(!canPlay())return true;
+      const data={type:'action',id:C.id(),peer:room.id,at:hostNow(),rev:room.rev,action,index,...(guestExchange?{exchangePub:guestExchange.pub}:{}),...(guestIdentity&&room.operatorGrant?{grant:room.operatorGrant.epoch}:{})};room.pending={data,sent:Date.now()};update();(guestIdentity?guestPacket(data):C.mac(data,room.token).then(auth=>({data,auth}))).then(publish);note('操作已发送，等待房主确认…');return true;},
+    changed(){if(room.role==='host'){room.rev++;const seriesChanged=syncSeriesState();save();broadcast();if(seriesChanged)adapter.render();resumeHandoff();}},
     init(a){adapter=a;
       nameUI();
       $('createRoom').onclick=create;$('soloMode').onclick=()=>{$('roomPanel').hidden=true;};

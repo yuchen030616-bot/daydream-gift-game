@@ -75,11 +75,12 @@
   window.QuotePopup?.pause();if(document.querySelector('dialog[open]:not(#mobileMenuDialog)'))return;refresh();$('mobileMenuDialog').showModal();$('mobileCloseMenu').focus();
  }
  function render(game){
-  if(!ready||!game)return;current=game;const newGame=game.gameId!==lastGame,changed=game.phase!==lastPhase,newMode=(game.mode||'gift')!==lastMode,promoted=lastRole==='watch'&&role()==='player';
+  if(!ready||!game)return;current=game;const newGame=game.gameId!==lastGame,changed=game.phase!==lastPhase,newMode=(game.mode||'gift')!==lastMode,promoted=['host','watch'].includes(lastRole)&&role()==='player',becameHost=['watch','player'].includes(lastRole)&&role()==='host';
   if(enabled()){
    const event=game.stageEvent,shuffle=event?.kind==='shuffle'&&event.active&&event.id!==lastEvent,shuffleEnded=lastShuffleActive&&!(event?.kind==='shuffle'&&event.active);
    let target=null;
    if(shuffle||promoted){lobbyFirst=false;target='game';}
+   else if(becameHost){lobbyFirst=false;target=game.phase==='ended'?'result':['pricing','offer'].includes(game.phase)?'deal':'game';}
    else if(shuffleEnded)target=['pricing','offer'].includes(game.phase)?'deal':game.phase==='ended'?'result':'game';
    else if(lobbyFirst)target='room';
    else if(newGame||changed){if(game.phase==='ended')target='result';else if(['pricing','offer'].includes(game.phase))target='deal';else if(newMode&&lastMode&&(game.mode||'gift')!=='gift'&&game.phase==='select')target='game';else if(!lastGame&&role()==='solo')target='room';else if(!(page==='settings'&&game.phase==='select'&&!newMode))target='game';}

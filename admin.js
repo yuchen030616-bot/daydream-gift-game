@@ -45,6 +45,12 @@
  function clearPrivate(){
   authEpoch++;confirming=null;peek=false;giftPoolKey='';targetPoolKey='';$('adminGift').value='';$('adminTarget').value='';$('adminPassword').value='';$('adminConfirmation').hidden=true;$('adminSecret').textContent='';$('adminSecret').hidden=true;
  }
+ function clearOwnerView(){
+  clearPrivate();nextPoolKey='';$('adminNext').value='';
+  for(const id of ['adminConfirmationText','adminGiftName','adminGiftPrice','adminNextStatus','adminTreasureHint','adminPhase','adminRound','adminReserve','adminMessage'])$(id).textContent='';
+  $('adminGiftImage').src='';$('adminGiftImage').hidden=true;
+  for(const id of ['adminCurrentLog','adminAudit'])$(id).innerHTML='';
+ }
  function stopRoomBrowser(){roomBrowserEpoch++;roomBrowser?.close();roomBrowser=null;roomRows=[];roomRowsKey=null;if($('adminRoomList'))$('adminRoomList').replaceChildren?.();if($('adminRoomCount'))$('adminRoomCount').textContent='0';}
  function browseRooms(){
   if(!session()||!$('adminDialog').open)return;
@@ -132,7 +138,7 @@
  function tab(name){activeTab=name;for(const b of document.querySelectorAll('[data-admin-tab]'))b.setAttribute('aria-selected',b.dataset.adminTab===name);for(const p of document.querySelectorAll('[data-admin-page]'))p.hidden=p.dataset.adminPage!==name;}
  function render(g){
   if(!api)return;current=g;
-  if(lastRole&&lastRole!==role()){peek=false;cancel();}lastRole=role();
+  if(lastRole&&lastRole!==role()){if(['host','solo'].includes(lastRole)&&!owner())clearOwnerView();else{peek=false;cancel();}}lastRole=role();
   if(g.gameId!==lastGame){peek=false;cancel();giftPoolKey='';targetPoolKey='';$('adminGift').value='';$('adminTarget').value='';lastGame=g.gameId;}
   const valid=session();$('adminLogin').hidden=valid;$('adminConsole').hidden=!valid;$('adminLogout').hidden=!valid;$('adminDialog').classList.toggle('is-locked',!valid);
   if(!valid){$('adminScope').textContent='管理员登录';return;}

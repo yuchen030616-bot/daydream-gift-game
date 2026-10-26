@@ -6,16 +6,19 @@
  const topic=alias=>'daydream/lobby/v1/'+alias;
  const validNonce=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{22}$/.test(value);
  const mono=()=>performance.now();
+ const authorityPins=new Map();
+ function pin(code,authority){const previous=authorityPins.get(code);if(previous&&(authority.seq<previous.seq||authority.seq===previous.seq&&authority.chainId!==previous.chainId||authority.seq>previous.seq&&previous.seq>0&&!authority.prefixIds.includes(previous.chainId)))return false;if(!previous&&authorityPins.size>=2048)return false;authorityPins.set(code,{seq:authority.seq,chainId:authority.chainId});return true;}
  function pingNonce(raw){try{if(typeof raw!=='string'||raw.length>100)return null;const value=JSON.parse(raw);return validNonce(value?.nonce)?value.nonce:null;}catch{return null;}}
  const randomAlias=()=>{let n;do{n=crypto.getRandomValues(new Uint32Array(1))[0];}while(n>=4294960000);return String(n%10000).padStart(4,'0');};
  async function record(raw,alias,expectedNonce){
   try{
-   if(typeof raw!=='string'||raw.length>4000)return null;
+   if(typeof raw!=='string'||raw.length>250000)return null;
    const p=JSON.parse(raw),d=JSON.parse(p.data),now=Date.now();
    if(d.kind!=='daydream-room-alias-v1'||d.alias!==alias||!isAlias(d.alias)||!RoomCore.valid(d.code)||!Number.isFinite(d.at)||!Number.isFinite(d.expires)||d.expires<=d.at||d.expires-d.at>30000)return null;
    if(!await RoomCore.verify(p,p.pub,d.code))return null;
    if(!(validNonce(expectedNonce)&&d.request===expectedNonce)&&(d.at>now+5000||d.expires<=now))return null;
-   return {alias:d.alias,code:d.code,pub:p.pub,at:d.at,expires:d.expires,...(validNonce(d.request)?{request:d.request}:{})};
+   const authority=await RoomCore.authority(p,d.code);if(!authority||!pin(d.code,authority))return null;
+   return {alias:d.alias,code:d.code,pub:p.pub,at:d.at,expires:d.expires,chain:p.chain||[],authoritySeq:authority.seq,chainId:authority.chainId,...(validNonce(d.request)?{request:d.request}:{})};
   }catch{return null;}
  }
  function channel(){
@@ -69,7 +72,7 @@
  }
  async function claim(identity,onAlias){
   const ch=channel();let alias='',closed=false,allocating=false,heartbeat,lastPing=-Infinity;
-  const announce=async request=>{if(closed||!alias||allocating)return;const at=Date.now(),data={kind:'daydream-room-alias-v1',alias,code:identity.code,at,expires:at+30000,...(validNonce(request)?{request}:{})};const p=await RoomCore.sign(data,identity.privateKey);if(!closed)ch.send(data.alias,JSON.stringify({...p,pub:identity.pub}),!validNonce(request));};
+  const announce=async request=>{if(closed||!alias||allocating)return;const at=Date.now(),data={kind:'daydream-room-alias-v1',alias,code:identity.code,at,expires:at+30000,...(validNonce(request)?{request}:{})};const p=await RoomCore.sign(data,identity.privateKey);if(!closed)ch.send(data.alias,JSON.stringify({...p,pub:identity.pub,...(identity.chain?.length?{chain:identity.chain}:{})}),!validNonce(request));};
   async function allocate(preferred){
    if(closed||allocating)return;allocating=true;
    try{
