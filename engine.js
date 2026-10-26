@@ -8,9 +8,13 @@
   const QUOTE_ROUNDS=Object.freeze([2,4,6,7]);
   function numeric(value,mode,max){
     if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>max||(mode==='drink'&&!Number.isInteger(value)))throw new RangeError(mode==='drink'?'小口数须为范围内整数':'金额须为范围内非负数');
-    return (mode==='money'?Math.round(value/10)*10:Math.round(value))||0;
+    return (mode==='money'?Math.round((value+Number.EPSILON)*100)/100:Math.round(value))||0;
   }
   function numericGift(value,mode){return {name:`${value} ${mode==='money'?'元':'小口'}`,icon:mode==='money'?'🪙':'🥤',score:value,value,kind:mode};}
+  function offerValue(value,mode,max){
+    if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>max||mode==='drink'&&!Number.isInteger(value))throw new RangeError('报价须为范围内非负数');
+    return (mode==='money'?Math.round((value+Number.EPSILON)*100)/100:Math.round(value))||0;
+  }
   function makePool(configuration){
     const mode=configuration?.mode??'gift';
     if(!['gift','money','drink'].includes(mode))throw new RangeError('无效游戏模式');
@@ -61,6 +65,9 @@
       this.counterBudget = null;
       this.reshuffleRequest = null;
       this.poolProposal = null;
+      this.repriceUsed = false;
+      this.repricePending = false;
+      this.lastRepriceOffer = null;
     }
     _index(i) {
       if (!Number.isInteger(i) || i < 0 || i >= this.boxes.length) throw new RangeError('无效箱号');
@@ -71,6 +78,8 @@
     }
     set reshuffleRequest(value){this._reshuffleRequestState=value;}
     submitReshuffleRequest(){
+      if(this.phase==='ended')throw new Error('本局已结束，请另开新局');
+      if(this.counterProposal?.status==='pending')throw new Error('请先处理还价请求');
       if(this.poolProposal?.status==='pending'&&this.poolProposal.gameId===this.gameId)throw new Error('数值方案等待审批，暂时不能申请洗牌');
       if(this.reshuffleRequest)throw new Error('本局已经申请过重新洗牌');
       const id=typeof crypto!=='undefined'&&crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
@@ -80,6 +89,12 @@
     reviewReshuffleRequest(id,approved){
       const request=this.reshuffleRequest;
       if(!request||request.status!=='pending'||typeof id!=='string'||request.id!==id||typeof approved!=='boolean')throw new Error('这份洗牌申请已失效或审批无效');
+      if(approved){
+        if(this.phase==='ended')throw new Error('本局已结束，洗牌申请已失效');
+        const indices=this.boxes.map((_,i)=>i).filter(i=>!this.opened.includes(i)),values=indices.map(i=>this.boxes[i]);
+        for(let i=values.length-1;i>0;i--){const random=this.rng();if(!Number.isFinite(random)||random<0||random>=1)throw new RangeError('随机数须在 [0, 1) 内');const j=Math.floor(random*(i+1));[values[i],values[j]]=[values[j],values[i]];}
+        indices.forEach((box,i)=>this.boxes[box]=values[i]);this.directorPreset=null;
+      }
       request.status=approved?'approved':'declined';return {...request};
     }
     _poolSetup(){
@@ -130,12 +145,17 @@
         this.offer=null;
         return this.gifts[this.boxes[i]];
       }
+      this._makeOffer(manualOffer);
+      return this.gifts[this.boxes[i]];
+    }
+    _makeOffer(manualOffer=false){
+      const i=this.opened[this.opened.length-1];
       const remaining = this.boxes.filter((_, index) => !this.opened.includes(index));
       if(this.mode!=='gift'){
         const random=this.rng();if(!Number.isFinite(random)||random<0||random>=1)throw new RangeError('随机数须在 [0, 1) 内');
         const mean=remaining.reduce((sum,index)=>sum+this.gifts[index].value,0)/remaining.length;
         const factor=Math.max(.56,Math.min(.84,.60+this.round*.02+this.rejects*.012+(random*2-1)*.018));
-        const rounded=this.mode==='money'?Math.round(mean*factor/10)*10:Math.floor(mean*factor+1e-9);
+        const rounded=this.mode==='money'?Math.round((mean*factor+Number.EPSILON)*100)/100:Math.floor(mean*factor+1e-9);
         const value=Math.max(this.config.min,Math.min(this.config.max,rounded));
         this.offer=manualOffer?null:{...numericGift(value,this.mode),factor,reason:'试探报价'};
         this.phase=manualOffer?'pricing':'offer';return this.gifts[this.boxes[i]];
@@ -188,6 +208,14 @@
       if(manualOffer) this.offer = null;
       return this.gifts[this.boxes[i]];
     }
+    requestReprice(manualOffer=false){
+      if(typeof manualOffer!=='boolean'||this.phase!=='offer'||!this.offer||this.repriceUsed===true||this.counterProposal?.status==='pending'||this.reshuffleRequest?.status==='pending')throw new Error('仅有有效报价时可请求重新估价，每局一次');
+      const previous=this.offer;
+      // Compute before consuming the entitlement, so invalid RNG leaves the request retryable.
+      this._makeOffer(manualOffer);
+      this.lastRepriceOffer=JSON.parse(JSON.stringify(previous));this.repriceUsed=true;this.repricePending=manualOffer;
+      return this.snapshot();
+    }
     _moveTreasure(giftIndex, targetBox = this.selected) {
       this._index(targetBox);
       if(this.opened.includes(targetBox))throw new Error('这个箱子已经打开，不能再设置');
@@ -227,7 +255,7 @@
       const seen=new Set(),items=bundle.map(item=>{this._index(item.gift);if(seen.has(item.gift)||!Number.isInteger(item.count)||item.count<1||item.count>99999999)throw new Error('无效礼物数量');seen.add(item.gift);return{...this.gifts[item.gift],count:item.count};});
       this.offer={name:items.map(g=>`${g.name} × ${g.count}`).join(' + '),icon:items[0].icon,items,score:items.reduce((n,g)=>n+g.score*g.count,0),issuer:'host'};
       this.counterProposal=null;this.counterBudget??=this._counterLimit();
-      this.phase='offer';return this.snapshot();
+      this.repricePending=false;this.phase='offer';return this.snapshot();
     }
     _counterLimit(){
       const values=this.boxes.filter((_,i)=>!this.opened.includes(i)).map(index=>this.gifts[index].score);
@@ -280,8 +308,8 @@
     }
     setNumericOffer(value){
       if(this.mode==='gift'||this.phase!=='pricing')throw new Error('当前不能设置数值报价');
-      value=numeric(value,this.mode,this.config.max);
-      this.offer={...numericGift(value,this.mode),issuer:'host'};this.phase='offer';return this.snapshot();
+      value=offerValue(value,this.mode,this.config.max);
+      this.offer={...numericGift(value,this.mode),issuer:'host'};this.repricePending=false;this.phase='offer';return this.snapshot();
     }
     skip(){
       if(this.mode!=='drink'||this.phase==='ended')throw new Error('当前不能跳过');
@@ -337,12 +365,12 @@
     }
     snapshot() {
       const copy = value => value && { ...value, ...(value.items ? { items: value.items.map(item => ({ ...item })) } : {}) };
-      return { poolProposal:this.poolProposal&&JSON.parse(JSON.stringify(this.poolProposal)),reshuffleRequest:this.reshuffleRequest&&JSON.parse(JSON.stringify(this.reshuffleRequest)),counterBudget:this.counterBudget,counterProposal:this.counterProposal&&{...this.counterProposal,items:this.counterProposal.items.map(item=>({...item}))},mode:this.mode,config:{...this.config,values:[...this.config.values]},gifts:this.gifts.map(g=>({...g})),stageEvent:this.stageEvent==null?null:JSON.parse(JSON.stringify(this.stageEvent)),boxes: [...this.boxes], directorPreset:this.directorPreset,directorLog:(this.directorLog||[]).map(e=>({...e})),gameId:this.gameId, started:this.started, selected: this.selected, initialSelected:this.initialSelected,finalChoice:this.finalChoice,opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, cadence:this.cadence,previousOfferName:this.previousOfferName,pricesVersion:this.pricesVersion,lastDeclinedOffer:copy(this.lastDeclinedOffer),comparison:this.comparison&&{...this.comparison,alternative:copy(this.comparison.alternative)},offer: copy(this.offer), result: copy(this.result) };
+      return { repriceUsed:this.repriceUsed===true,repricePending:this.repricePending===true,lastRepriceOffer:copy(this.lastRepriceOffer),poolProposal:this.poolProposal&&JSON.parse(JSON.stringify(this.poolProposal)),reshuffleRequest:this.reshuffleRequest&&JSON.parse(JSON.stringify(this.reshuffleRequest)),counterBudget:this.counterBudget,counterProposal:this.counterProposal&&{...this.counterProposal,items:this.counterProposal.items.map(item=>({...item}))},mode:this.mode,config:{...this.config,values:[...this.config.values]},gifts:this.gifts.map(g=>({...g})),stageEvent:this.stageEvent==null?null:JSON.parse(JSON.stringify(this.stageEvent)),boxes: [...this.boxes], directorPreset:this.directorPreset,directorLog:(this.directorLog||[]).map(e=>({...e})),gameId:this.gameId, started:this.started, selected: this.selected, initialSelected:this.initialSelected,finalChoice:this.finalChoice,opened: [...this.opened], phase: this.phase, round: this.round, rejects: this.rejects, lastDecisionMs: this.lastDecisionMs, cadence:this.cadence,previousOfferName:this.previousOfferName,pricesVersion:this.pricesVersion,lastDeclinedOffer:copy(this.lastDeclinedOffer),comparison:this.comparison&&{...this.comparison,alternative:copy(this.comparison.alternative)},offer: copy(this.offer), result: copy(this.result) };
     }
   }
   Engine.GIFTS = GIFTS;
   Engine.makePool=makePool;
-  Engine.moneyGift=value=>numericGift(numeric(value,'money',1000000),'money');
+  Engine.moneyGift=value=>numericGift(offerValue(value,'money',1000000),'money');
   Engine.reprice = gift => {
     if(!gift)return gift;
     const items=gift.items?.map(item=>({...item,score:GIFTS.find(g=>g.name===item.name)?.score??item.score}));

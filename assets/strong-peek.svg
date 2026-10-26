@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="光头强偷偷看漫画头像">
+ <path d="M9 62c1-13 10-19 23-19s22 6 23 19" fill="#684a7b" stroke="#593624" stroke-width="2.5"/>
+ <path d="m22 50 10 9 10-9-5-6H27z" fill="#ffbd69"/>
+ <ellipse cx="15" cy="33" rx="5" ry="7" fill="#eab07d" stroke="#774226" stroke-width="2"/><ellipse cx="49" cy="33" rx="5" ry="7" fill="#eab07d" stroke="#774226" stroke-width="2"/>
+ <path d="M16 22c0-14 32-14 32 0v16c0 12-8 18-16 18S16 50 16 38z" fill="#f7c48c" stroke="#774226" stroke-width="2.5"/>
+ <path d="M16 20c-4-9 1-16 16-16s20 7 16 16" fill="#f2a72f" stroke="#704321" stroke-width="2.5"/>
+ <path d="M10 20c10-8 34-8 44 0l-2 7c-12-5-28-5-40 0z" fill="#ce7428" stroke="#704321" stroke-width="2.5"/>
+ <path d="M23 7v10m18-10v10" stroke="#fbd579" stroke-width="3" stroke-linecap="round"/>
+ <path d="m20 30 8-3m8 0 8 3" stroke="#754422" stroke-width="4" stroke-linecap="round"/>
+ <ellipse cx="25" cy="35" rx="4.5" ry="5.5" fill="#fffaf0"/><ellipse cx="39" cy="35" rx="4.5" ry="5.5" fill="#fffaf0"/>
+ <circle cx="27" cy="35" r="2.2" fill="#443229"/><circle cx="41" cy="35" r="2.2" fill="#443229"/>
+ <ellipse cx="33" cy="40" rx="8" ry="5.5" fill="#df925c" stroke="#9a542f" stroke-width="1.8"/>
+ <path d="M24 47c5 4 12 4 17-1" fill="none" stroke="#784029" stroke-width="2.3" stroke-linecap="round"/>
+ <path d="m23 52-4 9m22-9 4 9" stroke="#b09a65" stroke-width="3"/>
+</svg>

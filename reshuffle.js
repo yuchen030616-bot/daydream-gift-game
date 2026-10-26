@@ -12,24 +12,25 @@
  const counterBlocked=()=>g?.counterProposal?.status==='pending'&&!proposal();
  const waiting=()=>proposal()?.status==='pending'||requestLatch===g?.gameId;
  const denied=()=>proposal()?.status==='declined';
- function enabled(){return !!g&&!api.isBusy?.()&&!shuffled(g)&&!pending;}
+ const used=()=>['approved','declined'].includes(proposal()?.status);
+ function enabled(){return !!g&&g.phase!=='ended'&&!api.isBusy?.()&&!shuffled(g)&&!pending;}
  function restore(){if(restoring||!g)return;restoring=true;try{window.QuotePopup?.render(g,$('bearLine')?.textContent||'');}finally{restoring=false;}}
  function close(){openedGameId=null;if($('reshuffleDialog').open)$('reshuffleDialog').close();}
  function feedback(text){$('reshuffleFeedback').textContent=text;$('reshuffleInlineNotice').textContent=text;}
  function sync(){
-  const host=reviewable(),canEnter=host||player();
-  for(const id of ['askReshuffle','askReshuffleQuote']){$(id).hidden=!canEnter;$(id).disabled=!enabled()||counterBlocked()||!host&&(!playable()||denied());$(id).textContent=counterBlocked()?'先撤回礼物要求':host?'审核洗牌申请':denied()?'本局申请已被拒绝':waiting()?'查看洗牌申请':'求熊二 · 重新洗牌';}
-  $('reshufflePlayerActions').hidden=!player()||waiting()||denied();$('reshuffleHostActions').hidden=!host;
-  $('confirmReshuffle').disabled=!enabled()||!playable()||waiting()||denied()||counterBlocked();$('approveReshuffle').disabled=$('rejectReshuffle').disabled=!enabled()||!host;
+  const host=reviewable(),canEnter=g?.phase!=='ended'&&(host||player());
+  for(const id of ['askReshuffle','askReshuffleQuote']){$(id).hidden=!canEnter;$(id).disabled=!enabled()||counterBlocked()||!host&&(!playable()||used());$(id).textContent=counterBlocked()?'先撤回礼物要求':host?'审核洗牌申请':denied()?'本局申请已被拒绝':used()?'本局洗牌申请已使用':waiting()?'查看洗牌申请':'求熊二 · 重新洗牌';}
+  $('reshufflePlayerActions').hidden=!player()||waiting()||used();$('reshuffleHostActions').hidden=!host;
+  $('confirmReshuffle').disabled=!enabled()||!playable()||waiting()||used()||counterBlocked();$('approveReshuffle').disabled=$('rejectReshuffle').disabled=!enabled()||!host;
   $('reshuffleTitle').textContent=host?'熊二，批准这次洗牌吗？':waiting()?'洗牌申请已送到熊二桌上':'想请熊二重新洗牌？';
-  $('reshuffleExplanation').textContent=host?'玩家发送了这句话并申请重新洗牌。同意后才会清空本局进度并重新随机九只宝箱；拒绝将保留当前局。':waiting()?'等待房主决定。申请尚未重开本局，收起弹窗不会撤销申请；请勿重复提交。':'发送这句话后只会提交洗牌申请。房主同意后，本局进度才会清空、九只宝箱重新随机；房主拒绝则保留当前这局。';
+  $('reshuffleExplanation').textContent=host?((g.mode==='money'||g.mode==='drink')?'玩家':'主播')+'发送了这句话并申请重新洗牌。同意后只重排尚未打开的宝箱（包括保留箱），已开结果、轮次和当前报价保持；拒绝将保留当前局。':waiting()?'等待房主决定。申请尚未重开本局，收起弹窗不会撤销申请；请勿重复提交。':'发送这句话后只会提交洗牌申请。房主同意后，只重排未开启的宝箱（包括保留箱）；已开结果、进度和报价保持。本局仅可申请一次。';
  }
- function open(){if(!enabled()||counterBlocked()||!(reviewable()||playable()&&!denied()))return;window.QuotePopup?.pause();if(reviewable()){for(const id of ['resultDialog','playerStartDialog']){const dialog=$(id);if(dialog?.open)dialog.close();}}if(document.querySelector('dialog[open]:not(#reshuffleDialog)'))return;openedGameId=g.gameId;sync();$('reshuffleDialog').showModal();(reviewable()?$('rejectReshuffle'):waiting()?$('closeReshuffle'):$('declineReshuffle')).focus();}
- async function accept(){if(!enabled()||!playable()||waiting()||denied()||counterBlocked()||!$('reshuffleDialog').open||openedGameId!==g.gameId)return;const ticket=epoch,gameId=g.gameId;pending=true;sync();feedback('正在发送申请，等待房主决定…');try{const result=await api.request();if(ticket!==epoch)return;if(result===false)throw Error('暂未发送成功，请等待连接恢复后再试。');requestLatch=gameId;sync();feedback('申请已发送，等待房主决定。');}catch(e){if(ticket===epoch)feedback(e.message||'未能发送，请稍后重试。');}finally{if(ticket===epoch){pending=false;sync();}}}
+ function open(){if(!enabled()||counterBlocked()||!(reviewable()||playable()&&!used()))return;window.QuotePopup?.pause();if(reviewable()){for(const id of ['resultDialog','playerStartDialog']){const dialog=$(id);if(dialog?.open)dialog.close();}}if(document.querySelector('dialog[open]:not(#reshuffleDialog)'))return;openedGameId=g.gameId;sync();$('reshuffleDialog').showModal();(reviewable()?$('rejectReshuffle'):waiting()?$('closeReshuffle'):$('declineReshuffle')).focus();}
+ async function accept(){if(!enabled()||!playable()||waiting()||used()||counterBlocked()||!$('reshuffleDialog').open||openedGameId!==g.gameId)return;const ticket=epoch,gameId=g.gameId;pending=true;sync();feedback('正在发送申请，等待房主决定…');try{const result=await api.request();if(ticket!==epoch)return;if(result===false)throw Error('暂未发送成功，请等待连接恢复后再试。');requestLatch=gameId;sync();feedback('申请已发送，等待房主决定。');}catch(e){if(ticket===epoch)feedback(e.message||'未能发送，请稍后重试。');}finally{if(ticket===epoch){pending=false;sync();}}}
  async function review(accept){if(!enabled()||!reviewable()||openedGameId!==g.gameId)return;const ticket=epoch,id=proposal().id;pending=true;sync();try{const result=await api.review(id,accept);if(ticket!==epoch)return;if(result===false)throw Error('审核暂未同步，请稍后重试。');dismissed=id;close();}catch(e){if(ticket===epoch)feedback(e.message||'未能同步，请稍后重试。');}finally{if(ticket===epoch){pending=false;sync();}}}
  function render(game){if(!api)return;const old=g?.gameId;g=game;if(old!==g.gameId){epoch++;pending=false;dismissed='';requestLatch='';seenStatus='';close();feedback('');}if(shuffled(g)){epoch++;pending=false;close();}
   const p=proposal();if(p&&p.status!=='pending')requestLatch='';sync();
-  const status=p?[p.id,p.status].join(':'):'';if(status!==seenStatus){seenStatus=status;if(p?.status==='declined'){dismissed=p.id;close();feedback(player()?'房主拒绝，本局保留。':'已拒绝洗牌申请，本局保留。');}else if(p?.status==='approved')close();}
+  const status=p?[p.id,p.status].join(':'):'';if(status!==seenStatus){seenStatus=status;if(p?.status==='declined'){dismissed=p.id;close();feedback(player()?'房主拒绝，本局保留。':'已拒绝洗牌申请，本局保留。');}else if(p?.status==='approved'){close();feedback('洗牌已获同意，只重排未开启的宝箱，进度与报价保留。');}}
   if(reviewable()&&dismissed!==p.id&&!shuffled(g)&&!$('reshuffleDialog').open)open();
  }
  window.ReshufflePrompt={init(options){if(api)return;api=options;

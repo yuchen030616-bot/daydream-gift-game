@@ -1,14 +1,14 @@
 /* Room-owner console. The password is a local screen lock, never room authority. */
 (function(){
  'use strict';
- const $=id=>document.getElementById(id),SESSION_MS=15*60*1000;
+ const $=id=>document.getElementById(id),SESSION_MS=30*60*1000,SESSION_KEY='daydream.admin.session.v2';
  const HASH='c48785dc07c8369e512911d4cefbdea2272320a23655efd25e63c925b099d0ea';
  const images=['carnival.png','airship.svg','douyin.png','cruise.png','car.svg','balloon.png','rabbit.svg','kiss.png','heart.png'];
  const phases={select:'等待选箱',open:'正在开箱',pricing:'等待你报价',offer:'报价已发出',final:'最后两箱',ended:'本局已结束'};
- let api,current,until=0,unlocking=false,failures=0,blockedUntil=0,confirming=null,peek=false,lastRole='',lastGame='',activeTab='treasure',authEpoch=0,giftPoolKey='',targetPoolKey='';
+ let api,current,until=0,expiresAt=0,unlocking=false,failures=0,blockedUntil=0,confirming=null,peek=false,lastRole='',lastGame='',activeTab='treasure',authEpoch=0,giftPoolKey='',targetPoolKey='',roomBrowser=null,roomRows=[],roomBrowserEpoch=0,roomRowsKey=null;
  const clock=()=>performance.now(),role=()=>window.DreamRoom?.role||'solo';
  const owner=()=>['host','solo'].includes(role());
- const session=()=>until>clock();
+ const session=()=>until>clock()&&expiresAt>Date.now();
  const authorized=()=>session()&&owner();
  const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const mode=g=>g?.mode||'gift';
@@ -36,6 +36,32 @@
  function message(text,error=false){$('adminMessage').textContent=text;$('adminMessage').classList.toggle('is-error',error);}
  function read(name,fallback){try{return JSON.parse(localStorage.getItem(name))??fallback;}catch{return fallback;}}
  function store(name,value){try{localStorage.setItem(name,JSON.stringify(value));return true;}catch{return false;}}
+ function restoreSession(){
+  const saved=read(SESSION_KEY,null),now=Date.now();
+  if(!saved||saved.version!==2||!Number.isFinite(saved.issued)||!Number.isFinite(saved.expires)||saved.issued>now+5000||saved.expires<=now||saved.expires-saved.issued!==SESSION_MS)return;
+  if(until>0&&expiresAt===saved.expires)return;
+  expiresAt=saved.expires;until=clock()+Math.min(SESSION_MS,saved.expires-now);
+ }
+ function clearPrivate(){
+  authEpoch++;confirming=null;peek=false;giftPoolKey='';targetPoolKey='';$('adminGift').value='';$('adminTarget').value='';$('adminPassword').value='';$('adminConfirmation').hidden=true;$('adminSecret').textContent='';$('adminSecret').hidden=true;
+ }
+ function stopRoomBrowser(){roomBrowserEpoch++;roomBrowser?.close();roomBrowser=null;roomRows=[];roomRowsKey=null;if($('adminRoomList'))$('adminRoomList').replaceChildren?.();if($('adminRoomCount'))$('adminRoomCount').textContent='0';}
+ function browseRooms(){
+  if(!session()||!$('adminDialog').open)return;
+  stopRoomBrowser();
+  if(!window.RoomLobby){$('adminRoomStatus').textContent='房间目录尚未加载，请刷新网页。';return;}
+  $('adminRoomStatus').textContent='正在连接在线房间目录…';
+  const epoch=roomBrowserEpoch,active=()=>epoch===roomBrowserEpoch&&session()&&$('adminDialog').open;
+  roomBrowser=window.RoomLobby.subscribe(rows=>{if(!active())return;roomRows=rows;renderRooms();},{baseUrl:location.href,onStatus:status=>{if(!active())return;$('adminRoomStatus').textContent=status.connected?'在线目录已连接 · 房主离线后自动移除':'目录连接中，正在重试…';}});
+ }
+ function renderRooms(){
+  const list=$('adminRoomList');if(!list||!session())return;
+  const nextKey=JSON.stringify(roomRows.map(({code,alias,hostName,count,mode,phase,watchUrl})=>({code,alias,hostName,count,mode,phase,watchUrl})));if(nextKey===roomRowsKey)return;roomRowsKey=nextKey;
+  list.replaceChildren();$('adminRoomCount').textContent=String(roomRows.length);
+  if(!roomRows.length){const empty=document.createElement('p');empty.className='admin-room-empty';empty.textContent='暂未发现在线房间。房主打开新版并保持在线后，会自动出现在这里。';list.append(empty);return;}
+  const editions={gift:'主播版',money:'普通版',drink:'喝酒版'};
+  for(const row of roomRows){const card=document.createElement('article');card.className='admin-room-card';const info=document.createElement('div'),title=document.createElement('strong'),detail=document.createElement('span'),watch=document.createElement('a');title.textContent=(row.alias?'房间 '+row.alias:'房间码生成中')+' · '+row.hostName;detail.textContent=(editions[row.mode]||'主播版')+' · '+(phases[row.phase]||'进行中')+' · '+row.count+' 人在线';info.append(title,detail);watch.textContent='进入观战';watch.className='admin-room-watch';watch.href=row.watchUrl;watch.target='_blank';watch.rel='noopener noreferrer';card.append(info,watch);list.append(card);}
+ }
  function nextGift(g=current){const n=read(presetKey(g),null);if(mode(g)==='gift')return Number.isInteger(n)&&n>=0&&n<9?n:null;return n&&n.signature===signature(g)&&Number.isInteger(n.index)&&n.index>=0&&n.index<pool(g).length?n.index:null;}
  function refreshNext(g){const sig=signature(g);if(nextPoolKey!==sig){$('adminNext').innerHTML='<option value="">随机分配</option>'+pool(g).map((_,i)=>`<option value="${i}">${escape(itemLabel(g,i))}</option>`).join('');const n=nextGift(g);$('adminNext').value=n===null?'':String(n);nextPoolKey=sig;}}
  function audit(action,gift=null,box=null){
@@ -44,7 +70,7 @@
   store('daydream.admin.audit',safe.slice(0,100));
  }
  function lock(text='已退出管理后台。'){
-  authEpoch++;until=0;confirming=null;peek=false;giftPoolKey='';targetPoolKey='';$('adminGift').value='';$('adminTarget').value='';$('adminPassword').value='';$('adminConfirmation').hidden=true;
+  until=0;expiresAt=0;store(SESSION_KEY,null);clearPrivate();stopRoomBrowser();
   $('adminLoginError').textContent=text;if(current)render(current);
  }
  async function login(e){
@@ -57,17 +83,17 @@
    if(epoch!==authEpoch)return;
    const digest=Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
    if(digest!==HASH){failures++;if(failures>=5){blockedUntil=clock()+30000;failures=0;}$('adminLoginError').textContent=blockedUntil>clock()?'已连续输错5次，请30秒后重试。':'密码不正确，请重新输入。';return;}
-   until=clock()+SESSION_MS;failures=0;$('adminLoginError').textContent='';message(owner()?'已解锁，仅本设备可见。':'当前设备没有这个房间的管理权限。',!owner());
-   render(api.getGame());
+   const now=Date.now();expiresAt=now+SESSION_MS;until=clock()+SESSION_MS;store(SESSION_KEY,{version:2,issued:now,expires:expiresAt});failures=0;$('adminLoginError').textContent='';message(owner()?'已解锁，30分钟内无需再次输入密码。':'已解锁在线房间目录。当前房间管理仍需原房主身份。');
+   render(api.getGame());browseRooms();
   }catch{$('adminLoginError').textContent='当前浏览器无法验证密码，请使用新版微信或浏览器的 HTTPS 页面。';}
   finally{unlocking=false;$('adminLoginButton').disabled=false;}
  }
  function open(){
-  window.QuotePopup?.pause();lock('');render(api.getGame());
-  $('adminDialog').showModal();if(!session())$('adminPassword').focus();
+  window.QuotePopup?.pause();clearPrivate();restoreSession();render(api.getGame());
+  if(!$('adminDialog').open)$('adminDialog').showModal();if(!session())$('adminPassword').focus();else browseRooms();
  }
  function closed(){
-  lock('');$('adminSecret').textContent='';$('adminSecret').hidden=true;
+  clearPrivate();stopRoomBrowser();
   api.getGame()&&window.QuotePopup?.render(api.getGame(),$('bearLine').textContent);
  }
  function cancel(){confirming=null;$('adminConfirmation').hidden=true;}
@@ -106,11 +132,11 @@
  function tab(name){activeTab=name;for(const b of document.querySelectorAll('[data-admin-tab]'))b.setAttribute('aria-selected',b.dataset.adminTab===name);for(const p of document.querySelectorAll('[data-admin-page]'))p.hidden=p.dataset.adminPage!==name;}
  function render(g){
   if(!api)return;current=g;
-  if(lastRole&&lastRole!==role()){until=0;peek=false;cancel();}lastRole=role();
+  if(lastRole&&lastRole!==role()){peek=false;cancel();}lastRole=role();
   if(g.gameId!==lastGame){peek=false;cancel();giftPoolKey='';targetPoolKey='';$('adminGift').value='';$('adminTarget').value='';lastGame=g.gameId;}
   const valid=session();$('adminLogin').hidden=valid;$('adminConsole').hidden=!valid;$('adminLogout').hidden=!valid;$('adminDialog').classList.toggle('is-locked',!valid);
   if(!valid){$('adminScope').textContent='管理员登录';return;}
-  $('adminScope').textContent=role()==='host'?'房主专属 · 本设备':role()==='solo'?'单人模式 · 本设备':'当前为主播／围观页面';
+  $('adminScope').textContent=(role()==='host'?'房主专属 · 本设备':role()==='solo'?'单人模式 · 本设备':'在线目录 · 只读观战')+' · 免密剩余 '+Math.max(1,Math.ceil(Math.min(until-clock(),expiresAt-Date.now())/60000))+' 分钟';
   $('adminNoAuthority').hidden=owner();$('adminControls').hidden=!owner();if(!owner())return;
   if(confirming&&key(g)!==confirming.expected){cancel();message('对局已更新，未执行的操作已取消，请重新确认。',true);}
   $('adminPhase').textContent=phases[g.phase]||'同步中';$('adminRound').textContent=g.opened.length+' / 7';$('adminReserve').textContent=g.selected===null?'等待选箱':String(g.selected+1).padStart(2,'0')+' 号箱';
@@ -140,9 +166,9 @@
   },
   init(options){api=options;
    // Public rules are constant for every round; private administrator actions stay local.
-   document.body.insertAdjacentHTML('beforeend',`<dialog id="adminDialog" class="admin-dialog is-locked" aria-labelledby="adminTitle"><header class="admin-header"><div class="admin-wordmark"><img src="assets/bear-negotiator.png" alt="熊二"><div><span class="eyebrow">BEAR'S PRIVATE OFFICE</span><h2 id="adminTitle">熊二 · 管理事务所</h2><p id="adminScope">管理员登录</p></div></div><button id="adminClose" class="admin-icon" type="button" aria-label="关闭管理后台">×</button></header><form id="adminLogin" class="admin-login"><span class="admin-lock-icon" aria-hidden="true">✦</span><h3>管理员，请入座。</h3><p>输入密码，打开你的管理控制台。</p><label for="adminPassword">管理密码</label><input id="adminPassword" type="password" autocomplete="current-password" required maxlength="128" placeholder="请输入管理密码"><p id="adminLoginError" class="admin-error" role="alert"></p><button id="adminLoginButton" class="admin-primary" type="submit">解锁后台 →</button><small>密码只解锁本机界面；多人管理仍需原房主设备。<br>每次打开均需输入密码；关闭后立即锁定。</small></form><section id="adminConsole" hidden><div id="adminNoAuthority" class="admin-empty" hidden><h3>请回到房主页面管理</h3><p>当前设备是主播或围观者。输入密码不会获得他人房间的管理权，请使用创建这个房间的原浏览器。</p></div><div id="adminControls"><div class="admin-overview"><article><span>当前进度</span><strong id="adminPhase"></strong></article><article><span>已开箱</span><strong id="adminRound"></strong></article><article><span>保留箱</span><strong id="adminReserve"></strong></article></div><div class="admin-tabs" role="tablist" aria-label="管理功能"><button type="button" role="tab" data-admin-tab="treasure" aria-selected="true">藏宝设置</button><button type="button" role="tab" data-admin-tab="round" aria-selected="false">新局管理</button><button type="button" role="tab" data-admin-tab="records" aria-selected="false">操作记录</button></div><div class="admin-body"><section data-admin-page="treasure"><div class="admin-section-title"><span>01 / TREASURE CONTROL</span><h3>给这局梦想，设个答案。</h3></div><p id="adminTreasureHint" class="admin-help"></p><div class="admin-treasure-grid"><div class="admin-gift-preview"><img id="adminGiftImage" alt="礼物预览"><strong id="adminGiftName"></strong><span id="adminGiftPrice"></span></div><div class="admin-gift-form"><label for="adminTarget">要设置哪只箱子</label><select id="adminTarget"><option value="">主播即将选中的保留箱</option></select><label for="adminGift">这只箱子的礼物</label><div class="admin-choice-row"><select id="adminGift"><option value="">请选择礼物，或点随机</option></select><button id="adminRandom" class="admin-secondary" type="button">⤨ 随机</button></div><small class="admin-choice-hint">仅从未开出的礼物抽选；确认设置后才生效。</small><button id="adminApply" class="admin-primary" type="button">设置本局藏宝 →</button><button id="adminClear" class="admin-secondary" type="button">撤回选箱前预设</button></div></div><div class="admin-private"><span>🔒 以下内容仅本设备显示</span><button id="adminPeek" type="button">查看当前藏宝</button><p id="adminSecret" hidden></p></div><div class="admin-disclosure"><strong>设置绑定箱号。</strong><p>主播换箱后领取新箱内的礼物；已开出的礼物不能恢复，发出报价期间不能改，结算结果不能重写。玩家只看到统一游戏规则，具体设置和操作记录仅本机可见。</p></div></section><section data-admin-page="round" hidden><div class="admin-section-title"><span>02 / NEXT DREAM</span><h3>下一局，提前安排。</h3></div><p class="admin-help">保存后仅在下一次重开生效，使用一次后恢复随机。预设绑定主播选中的保留箱。</p><label for="adminNext">下一局保留箱礼物</label><select id="adminNext"><option value="">随机分配</option>${DreamEngine.GIFTS.map((g,i)=>`<option value="${i}">${g.icon} ${g.name}</option>`).join('')}</select><button id="adminSaveNext" class="admin-primary" type="button">保存下一局预设</button><p id="adminNextStatus" class="admin-next-status"></p><div class="admin-restart"><h4>重新开局</h4><p>重新洗牌、清空当前进度，房间码与在线成员保留。</p><button id="adminRestart" class="admin-secondary" type="button">↻ 结束本局，重新开始</button></div></section><section data-admin-page="records" hidden><div class="admin-section-title"><span>03 / THE LEDGER</span><h3>每次设置，都有记录。</h3></div><p class="admin-help">礼物详情和管理操作记录仅房主本机可见，保存在本浏览器。</p><h4>本局藏宝记录</h4><ol id="adminCurrentLog" class="admin-ledger"></ol><h4>本设备最近操作</h4><ol id="adminAudit" class="admin-ledger"></ol></section></div><div id="adminConfirmation" class="admin-confirmation" hidden><strong>确认这次管理操作</strong><p id="adminConfirmationText"></p><div><button id="adminConfirm" class="admin-primary" type="button">确认执行</button><button id="adminCancel" class="admin-secondary" type="button">取消</button></div></div><p id="adminMessage" class="admin-message" role="status" aria-live="polite"></p></div></section><footer class="admin-bottom"><span>本机界面锁 · 管理权由房主身份校验</span><button id="adminLogout" type="button" hidden>退出登录 ↗</button></footer></dialog>`);
+   document.body.insertAdjacentHTML('beforeend',`<dialog id="adminDialog" class="admin-dialog is-locked" aria-labelledby="adminTitle"><header class="admin-header"><div class="admin-wordmark"><img src="assets/bear-negotiator.png" alt="熊二"><div><span class="eyebrow">BEAR'S PRIVATE OFFICE</span><h2 id="adminTitle">熊二 · 管理事务所</h2><p id="adminScope">管理员登录</p></div></div><button id="adminClose" class="admin-icon" type="button" aria-label="关闭管理后台">×</button></header><form id="adminLogin" class="admin-login"><span class="admin-lock-icon" aria-hidden="true">✦</span><h3>管理员，请入座。</h3><p>输入密码，打开你的管理控制台。</p><label for="adminPassword">管理密码</label><input id="adminPassword" type="password" autocomplete="current-password" required maxlength="128" placeholder="请输入管理密码"><p id="adminLoginError" class="admin-error" role="alert"></p><button id="adminLoginButton" class="admin-primary" type="submit">解锁后台 →</button><small>密码只解锁本机界面；多人管理仍需原房主设备。<br>登录后30分钟内免密，关闭或刷新不延长有效期；退出登录会立即锁定。</small></form><section id="adminConsole" hidden><details id="adminOnlineRooms" class="admin-online-rooms" open><summary><span>在线房间</span><strong id="adminRoomCount">0</strong><small>点击展开 / 收起</small></summary><div class="admin-room-toolbar"><p id="adminRoomStatus" role="status">登录后连接在线房间目录</p><button id="adminRefreshRooms" class="admin-secondary" type="button">刷新目录</button></div><div id="adminRoomList" class="admin-room-list"></div><p class="admin-room-note">点击观战会新开只读页面，当前房间继续保持在线。</p></details><div id="adminNoAuthority" class="admin-empty" hidden><h3>请回到房主页面管理</h3><p>当前设备是主播或围观者。输入密码不会获得他人房间的管理权，请使用创建这个房间的原浏览器。</p></div><div id="adminControls"><div class="admin-overview"><article><span>当前进度</span><strong id="adminPhase"></strong></article><article><span>已开箱</span><strong id="adminRound"></strong></article><article><span>保留箱</span><strong id="adminReserve"></strong></article></div><div class="admin-tabs" role="tablist" aria-label="管理功能"><button type="button" role="tab" data-admin-tab="treasure" aria-selected="true">藏宝设置</button><button type="button" role="tab" data-admin-tab="round" aria-selected="false">新局管理</button><button type="button" role="tab" data-admin-tab="records" aria-selected="false">操作记录</button></div><div class="admin-body"><section data-admin-page="treasure"><div class="admin-section-title"><span>01 / TREASURE CONTROL</span><h3>给这局梦想，设个答案。</h3></div><p id="adminTreasureHint" class="admin-help"></p><div class="admin-treasure-grid"><div class="admin-gift-preview"><img id="adminGiftImage" alt="礼物预览"><strong id="adminGiftName"></strong><span id="adminGiftPrice"></span></div><div class="admin-gift-form"><label for="adminTarget">要设置哪只箱子</label><select id="adminTarget"><option value="">主播即将选中的保留箱</option></select><label for="adminGift">这只箱子的礼物</label><div class="admin-choice-row"><select id="adminGift"><option value="">请选择礼物，或点随机</option></select><button id="adminRandom" class="admin-secondary" type="button">⤨ 随机</button></div><small class="admin-choice-hint">仅从未开出的礼物抽选；确认设置后才生效。</small><button id="adminApply" class="admin-primary" type="button">设置本局藏宝 →</button><button id="adminClear" class="admin-secondary" type="button">撤回选箱前预设</button></div></div><div class="admin-private"><span>🔒 以下内容仅本设备显示</span><button id="adminPeek" type="button">查看当前藏宝</button><p id="adminSecret" hidden></p></div><div class="admin-disclosure"><strong>设置绑定箱号。</strong><p>主播换箱后领取新箱内的礼物；已开出的礼物不能恢复，发出报价期间不能改，结算结果不能重写。玩家只看到统一游戏规则，具体设置和操作记录仅本机可见。</p></div></section><section data-admin-page="round" hidden><div class="admin-section-title"><span>02 / NEXT DREAM</span><h3>下一局，提前安排。</h3></div><p class="admin-help">保存后仅在下一次重开生效，使用一次后恢复随机。预设绑定主播选中的保留箱。</p><label for="adminNext">下一局保留箱礼物</label><select id="adminNext"><option value="">随机分配</option>${DreamEngine.GIFTS.map((g,i)=>`<option value="${i}">${g.icon} ${g.name}</option>`).join('')}</select><button id="adminSaveNext" class="admin-primary" type="button">保存下一局预设</button><p id="adminNextStatus" class="admin-next-status"></p><div class="admin-restart"><h4>重新开局</h4><p>重新洗牌、清空当前进度，房间码与在线成员保留。</p><button id="adminRestart" class="admin-secondary" type="button">↻ 结束本局，重新开始</button></div></section><section data-admin-page="records" hidden><div class="admin-section-title"><span>03 / THE LEDGER</span><h3>每次设置，都有记录。</h3></div><p class="admin-help">礼物详情和管理操作记录仅房主本机可见，保存在本浏览器。</p><h4>本局藏宝记录</h4><ol id="adminCurrentLog" class="admin-ledger"></ol><h4>本设备最近操作</h4><ol id="adminAudit" class="admin-ledger"></ol></section></div><div id="adminConfirmation" class="admin-confirmation" hidden><strong>确认这次管理操作</strong><p id="adminConfirmationText"></p><div><button id="adminConfirm" class="admin-primary" type="button">确认执行</button><button id="adminCancel" class="admin-secondary" type="button">取消</button></div></div><p id="adminMessage" class="admin-message" role="status" aria-live="polite"></p></div></section><footer class="admin-bottom"><span>本机界面锁 · 管理权由房主身份校验</span><button id="adminLogout" type="button" hidden>退出登录 ↗</button></footer></dialog>`);
    $('adminEntry').onclick=open;$('adminLogin').onsubmit=login;$('adminClose').onclick=()=>$('adminDialog').close();$('adminLogout').onclick=()=>lock();
-   $('adminDialog').onclose=closed;
+   $('adminDialog').onclose=closed;$('adminRefreshRooms').onclick=browseRooms;restoreSession();
    $('adminGift').onchange=()=>{cancel();preview();};
    $('adminTarget').onchange=()=>{cancel();peek=false;render(api.getGame());};
    $('adminRandom').onclick=randomize;$('adminApply').onclick=()=>stage('treasure');$('adminClear').onclick=()=>stage('clear');$('adminRestart').onclick=()=>stage('restart');$('adminConfirm').onclick=execute;$('adminCancel').onclick=cancel;
@@ -150,7 +176,8 @@
    $('adminNext').value='';
    $('adminSaveNext').onclick=()=>{try{requireControl();const g=api.getGame(),raw=$('adminNext').value,gift=raw===''?null:Number(raw);if(gift!==null&&(!Number.isInteger(gift)||gift<0||gift>=pool(g).length))throw Error('请选择有效项目');if(!store(presetKey(g),gift===null?null:mode(g)==='gift'?gift:{index:gift,signature:signature(g)}))throw Error('浏览器未能保存，请允许本地存储后再试');audit(gift===null?'random':'next',gift);message('已保存，仅同一配置的下一次重开生效一次。');render(g);}catch(e){message(e.message,true);}};
    for(const b of document.querySelectorAll('[data-admin-tab]'))b.onclick=()=>{cancel();tab(b.dataset.adminTab);};
-   setInterval(()=>{if(until&&!session())lock('登录已超过15分钟，请重新输入密码。');},1000);
+   setInterval(()=>{if(until&&!session())lock('登录已超过30分钟，请重新输入密码。');},1000);
+   window.addEventListener?.('storage',event=>{if(event.key!==SESSION_KEY)return;if(!event.newValue||event.newValue==='null'){until=0;expiresAt=0;clearPrivate();stopRoomBrowser();render(api.getGame());}else{restoreSession();if($('adminDialog').open){render(api.getGame());browseRooms();}}});
   },render
  };
 })();

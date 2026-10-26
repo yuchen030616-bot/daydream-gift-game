@@ -4,16 +4,19 @@
   const $=id=>document.getElementById(id);
   let api,current=null,currentLine='',key='',dismissed=false,deciding=false,mode='';
   const role=()=>window.DreamRoom?.role||'solo';
+  const canQuote=()=>typeof window.DreamRoom?.canQuote==='boolean'?window.DreamRoom.canQuote:role()==='host';
   const canDecide=()=>['solo','player'].includes(role())&&(!window.DreamRoom||DreamRoom.canPlay());
   function restoreDesk(){const desk=$('ownerDesk'),container=$('quotePrivate');if(desk&&desk.parentNode===container)document.querySelector('.game-layout').before(desk);}
   function close(){if($('quoteDialog').open)$('quoteDialog').close();restoreDesk();}
   function dismiss(){dismissed=true;close();}
   function allowed(){return current?.phase==='offer'&&current.counterProposal?.status!=='pending'&&current.reshuffleRequest?.status!=='pending'&&canDecide()&&!deciding;}
   function decide(action){if(!allowed())return;deciding=true;$('popupAccept').disabled=true;$('popupContinue').disabled=true;$('quotePending').textContent='正在同步你的决定…';api.decision(action);}
+  function reprice(){if(!allowed()||!current.offer||current.repriceUsed===true)return;deciding=true;$('requestReprice').disabled=true;$('quotePending').textContent='正在请求庄家重新估价…';try{api.decision('reprice',{gameId:current.gameId});}catch{deciding=false;render(current,currentLine);}}
   function render(game,line=''){
     if(!api)return;current=game;currentLine=line;
+    if($('requestReprice')){$('requestReprice').hidden=!['player','solo'].includes(role())||game.phase!=='offer';$('requestReprice').disabled=!allowed()||!game.offer||game.repriceUsed===true;$('requestReprice').textContent=game.repriceUsed?'本局重新估价已使用':'请求重新估价 · 每局一次';}
     const edition=game.mode||'gift',drink=edition==='drink',money=edition==='money';
-    const privateMode=role()==='host'&&game.phase==='pricing'&&!!$('ownerDesk');
+    const privateMode=canQuote()&&game.phase==='pricing'&&!!$('ownerDesk');
     const publicMode=game.phase==='offer'&&!!game.offer;
     if(!privateMode&&!publicMode){key='';mode='';dismissed=false;deciding=false;$('viewQuote').hidden=true;close();return;}
     mode=privateMode?'private':'public';
@@ -29,23 +32,28 @@
     $('popupAccept').hidden=privateMode||!['solo','player'].includes(role());
     $('popupContinue').hidden=$('popupAccept').hidden;
     $('popupAccept').disabled=!allowed();$('popupContinue').disabled=!allowed();
-    $('quotePending').textContent=privateMode?'均价与四档候选仅房主可见，点一档即可发出。':!['solo','player'].includes(role())?'等待主播接受，或继续追梦。':canDecide()?'接受即终止本局；继续则放弃本轮报价。':'等待房主同步，连接恢复后即可决定。';
+    $('quotePending').textContent=privateMode?'均价与四档候选仅庄家可见，点一档即可发出。':!['solo','player'].includes(role())?'等待主播接受，或继续追梦。':canDecide()?'接受即终止本局；继续则放弃本轮报价。':'等待房主同步，连接恢复后即可决定。';
     if(drink)$('quotePending').textContent=privateMode?'小口数仅作游戏标记，请尊重玩家意愿；可随时跳过或用水替代。':!['solo','player'].includes(role())?'等待玩家自愿决定；也可跳过或用水替代。':canDecide()?'成年人自愿参与；可随时跳过，或用水等无酒精饮品替代。':'等待房主同步；无需饮用，可随时跳过。';
-    else if(money)$('quotePending').textContent=privateMode?'均价与四档候选仅房主可见，金额仅作娱乐模拟。':!['solo','player'].includes(role())?'等待玩家接受金额，或继续开箱。':canDecide()?'接受即结束本局；继续则放弃本轮金额。仅作娱乐模拟。':'等待房主同步，连接恢复后即可决定。';
+    else if(money)$('quotePending').textContent=privateMode?'均价与四档候选仅庄家可见，金额仅作娱乐模拟。':!['solo','player'].includes(role())?'等待玩家接受金额，或继续开箱。':canDecide()?'接受即结束本局；继续则放弃本轮金额。仅作娱乐模拟。':'等待房主同步，连接恢复后即可决定。';
     if(game.counterProposal?.status==='pending')$('quotePending').textContent=role()==='host'?'玩家提出了组合要求，请查看并决定；原报价暂时保留。':'组合要求正在等待回复，可撤回后继续考虑原报价。';
     else if(game.counterProposal?.status==='accepted')$('quotePending').textContent='组合要求已被接受，这是一份新报价；仍需玩家确认成交。';
     else if(game.counterProposal?.status==='declined'&&game.phase==='offer')$('quotePending').textContent='熊二没有同意这份要求，原报价仍然有效；可接受或继续开箱。';
     if(game.reshuffleRequest?.status==='pending')$('quotePending').textContent=role()==='host'?'玩家申请重新洗牌，请审核；你同意前不会重开。':'洗牌申请等待房主决定；原局保持，暂时不能继续操作。';
     else if(game.reshuffleRequest?.status==='declined')$('quotePending').textContent='房主拒绝了洗牌申请，本局继续；这一局不能重复申请。';
+    if(game.repricePending)$('quotePending').textContent=canQuote()?'玩家请求重新估价，请按四档候选或自定义重新报价；原报价仅供参考。':'已请求重新估价，正在等待庄家给出新报价。';
+    else if(game.repriceUsed&&game.lastRepriceOffer&&game.phase==='offer')$('quotePending').textContent='这是重新估价后的报价，仍需玩家接受或继续开箱；本局不能再次请求重新估价。';
+    const actor=edition==='gift'?'主播':'玩家';for(const id of ['quotePending','quoteDialogTitle'])$(id).textContent=$(id).textContent.replaceAll('主播',actor).replaceAll('玩家',actor);
     if(publicMode){$('quoteBearLine').textContent=drink?'这是一份自愿提案，按自己的意愿选择就好；可以继续开箱，也可以跳过或用水替代。':line;$('quotePopupGift').innerHTML=api.art(game.offer)+`<strong>${game.offer.name}</strong>`;$('quoteAudience').textContent='第 '+(DreamEngine.QUOTE_ROUNDS.indexOf(game.round)+1)+' 次报价 · 已开 '+game.round+' 箱';}
     if(window.MobilePages?.enabled()&&MobilePages.page!=='deal'){close();return;}
-    if(dismissed||$('seatSwitchDialog')?.open||$('mobileMenuDialog')?.open||$('numericStartDialog')?.open||$('modal').open||$('adminDialog')?.open||$('counterofferDialog')?.open||$('reshuffleDialog')?.open){close();return;}
+    if(dismissed||$('hostPeekDialog')?.open||$('bankerDialog')?.open||$('seriesDialog')?.open||$('seatSwitchDialog')?.open||$('mobileMenuDialog')?.open||$('numericStartDialog')?.open||$('modal').open||$('adminDialog')?.open||$('counterofferDialog')?.open||$('reshuffleDialog')?.open){close();return;}
     if(privateMode)$('quotePrivate').appendChild($('ownerDesk'));else restoreDesk();
     if(!$('quoteDialog').open)$('quoteDialog').showModal();
     else if(changed)$('closeQuote').focus();
   }
   window.QuotePopup={
     init(options){api=options;
+      if(document.createElement&&!$('requestReprice')){const button=document.createElement('button');button.id='requestReprice';button.type='button';button.className='secondary';button.textContent='请求重新估价 · 每局一次';$('quotePublic').appendChild(button);}
+      if($('requestReprice'))$('requestReprice').onclick=reprice;
       $('closeQuote').onclick=dismiss;
       $('quoteDialog').oncancel=e=>{e.preventDefault();dismiss();};
       $('quoteDialog').onclose=()=>{if(!$('quoteDialog').open)restoreDesk();};

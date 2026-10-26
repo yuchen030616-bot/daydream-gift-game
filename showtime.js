@@ -47,7 +47,7 @@
       $('keepNumber').textContent=String(g.selected+1).padStart(2,'0');$('swapNumber').textContent=String(other+1).padStart(2,'0');
       if(playable())locked=false;
       $('keepFinal').disabled=$('swapFinal').disabled=!playable()||locked;
-      $('duelHint').textContent=g.mode==='drink'?(playable()?'保留或换箱，也可以随时选择跳过、不喝。':'等待主播选择，也可以自愿跳过。'):playable()?'守住第一眼的直觉，还是换个命运？点选后立即开箱。':'等待主播决定：保留原箱，还是换成另一箱。';
+      $('duelHint').textContent=g.mode==='drink'?(playable()?'保留或换箱，也可以随时选择跳过、不喝。':'等待玩家选择，也可以自愿跳过。'):playable()?'守住第一眼的直觉，还是换个命运？点选后立即开箱。':(g.mode==='money'?'等待玩家决定：保留原箱，还是换成另一箱。':'等待主播决定：保留原箱，还是换成另一箱。');
       if(previous?.phase!=='final'){if(!window.MobilePages?.focus('game'))$('finalShowdown').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'center'});moment('最后两箱 · 命运对决','保留，还是换箱？只此一次选择');}
     }
     if(ended){

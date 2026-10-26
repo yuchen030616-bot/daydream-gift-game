@@ -1,0 +1,8 @@
+.banker-entry{min-height:44px;padding:9px 15px;border:1px solid #a69356;border-radius:9px;background:#f9ecc7;color:#34543b;font:700 14px/1.6 'Microsoft YaHei',sans-serif;cursor:pointer}
+.banker-dialog{width:min(580px,calc(100vw - 36px));max-height:82dvh;box-sizing:border-box;overflow:auto;border:1px solid #a69356;border-radius:16px;padding:28px;background:#fff9e9;color:#264531;box-shadow:0 20px 80px #10291d55}
+.banker-dialog::backdrop{background:#10291d9c;backdrop-filter:blur(4px)}
+.banker-close{position:absolute;right:12px;top:10px;width:44px;height:44px;border:0;border-radius:50%;background:transparent;font-size:28px;color:#34543b;cursor:pointer}
+.banker-dialog h2{margin:10px 30px 14px 0;font-size:25px}.banker-dialog p{line-height:1.8;overflow-wrap:anywhere}
+#bankerCurrent{padding:12px 16px;border-radius:9px;background:#e5eedc;font-weight:700}.banker-request{display:flex;gap:14px;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid #d9d4be}.banker-request strong{overflow-wrap:anywhere;min-width:0}
+.banker-review-actions{display:flex;gap:8px;flex-shrink:0}.banker-review-actions button{min-height:44px;padding:8px 12px;border:1px solid #b4ba9b;border-radius:8px;background:#eef2e4;color:#264531;font-weight:700;cursor:pointer}.banker-dialog button:disabled{opacity:.5;cursor:wait}#bankerStatus{min-height:1.8em;color:#56704d}
+@media(max-width:768px){.banker-dialog{width:calc(100vw - 24px);padding:22px 18px;max-height:86dvh}.banker-request{align-items:stretch;flex-direction:column}.banker-review-actions button{flex:1}.banker-entry{width:100%;font-size:15px}.banker-dialog>#requestBanker,.banker-dialog>#reclaimBanker{width:100%;min-height:48px}}

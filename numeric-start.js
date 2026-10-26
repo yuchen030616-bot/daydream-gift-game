@@ -6,7 +6,7 @@
  const numeric=g=>g&&(g.mode==='money'||g.mode==='drink');
  const pending=g=>g?.poolProposal?.status==='pending'&&g.poolProposal.gameId===g.gameId;
  const key=g=>g?.gameId+':'+(g?.poolProposal?.id||'draft');
- const available=g=>numeric(g)&&g.started===false&&g.phase==='select'&&g.selected===null&&!api.isBusy()&&g.reshuffleRequest?.status!=='pending';
+ const available=g=>numeric(g)&&window.DreamRoom?.seriesConfigured!==true&&g.started===false&&g.phase==='select'&&g.selected===null&&!api.isBusy()&&g.reshuffleRequest?.status!=='pending';
  const authority=g=>key(g)+':'+(g?.poolProposal?.status||'none')+':'+g?.started;
  const connected=()=>{if(role()==='solo')return true;if(api.isConnected)return !!api.isConnected();const room=window.DreamRoom;if(typeof room?.connected==='boolean')return room.connected;if(typeof room?.isConnected==='function')return !!room.isConnected();const status=$('roomStatus')?.textContent||'';return !/网络连接中|正在连接|连接失败|等待房主上线/.test(status);};
  const live=()=>connected()&&(role()==='solo'||role()==='host'||!!window.DreamRoom?.canPlay());
@@ -22,11 +22,11 @@
   for(const input of setup.querySelectorAll('input'))input.disabled=!enabled;
   $('rejectNumericStart').hidden=!host||!pending(g);$('rejectNumericStart').disabled=!available(g)||!connected()||sending;
   $('numericStartTitle').textContent=host?'确认本局九个数值':g.mode==='money'?'先选本局金额':'先选自愿小口数';
-  $('numericStartHint').textContent=g.mode==='drink'?'小口数0至5，0代表不喝。自愿参与，可随时跳过。':'金额会就近四舍五入为整十元。可以自动生成，也可以逐项修改。';
+  $('numericStartHint').textContent=g.mode==='drink'?'小口数0至5，0代表不喝。自愿参与，可随时跳过。':'金额保留到分。可按范围和参考均价生成九个不同的数，也可逐项修改。';
   if(!connected())message('连接已中断，草稿已保留。恢复连接后可重试；已发送的方案以房主同步结果为准。',true);
   else if(lastError)message(lastError,true);
   else if(waiting)message(sending?'正在发送方案，等待同步确认，请勿重复提交。':'方案已提交，等待房主调整并确认。');
-  else if(host)message('可以修改范围和九个数值。确认后将直接洗牌，主播无需再次点击开始。');
+  else if(host)message('可以修改范围和九个数值。确认后将直接洗牌，玩家无需再次点击开始。');
   else if(g.poolProposal?.status==='declined')message('房主请你重新调整。修改后可以再次提交。');
   else message(role()==='solo'?'选好九项数值，确认后直接洗牌开始。':'选好九项数值后提交，等待房主最终确认。');
  }

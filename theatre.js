@@ -15,7 +15,7 @@
    $('theatreShuffleLine').textContent=String(event.text||'熊二正在洗牌，请稍候…');
    const stage=document.querySelector('.stage');if(!window.MobilePages?.focus('game'))stage?.scrollIntoView?.({behavior:'instant',block:'center'});
   }else if(event.kind==='banter'){
-   const bubble=$('theatreBanter');(document.querySelector('dialog[open]')||document.body).appendChild(bubble);$('theatreSpeaker').textContent=event.speaker==='host'?'熊二 · 谈判放话':'追梦人 · 接招吧';$('theatreLine').textContent=String(event.text||'');bubble.hidden=false;
+   const bubble=$('theatreBanter');(document.querySelector('dialog[open]')||document.body).appendChild(bubble);$('theatreSpeaker').textContent=event.speaker==='host'?'熊二 · 谈判放话':(current?.mode==='money'||current?.mode==='drink'?'玩家':'主播')+' · 接招吧';$('theatreLine').textContent=String(event.text||'');bubble.hidden=false;
    // A normal positioned panel never enters the modal top layer or steals focus.
   }
   const duration=[2200,3000].includes(event.duration)?event.duration:event.kind==='shuffle'?2200:3000;
