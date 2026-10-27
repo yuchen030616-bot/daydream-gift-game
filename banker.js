@@ -1,4 +1,4 @@
-/* Room owner approves quote-only delegation. This UI never changes authority itself. */
+/* Visible room entry for host handoff. Authority still changes only through the room protocol. */
 (function(){
  'use strict';
  const $=id=>document.getElementById(id),room=()=>window.DreamRoom;
@@ -19,7 +19,10 @@
   for(const member of room()?.members||[]){if(member.role==='host')continue;const row=document.createElement('div');row.className='banker-request';const name=document.createElement('strong');name.textContent=member.name+' · '+(member.role==='player'?(game?.mode==='money'||game?.mode==='drink'?'玩家':'主播'):'围观');const button=document.createElement('button');button.type='button';button.textContent='邀请成为房主';button.disabled=busy||room()?.connected===false||!member.handoffInvitable||room()?.handoffPending;button.onclick=()=>{if(host())return invoke(()=>room().inviteHost(member.id),'邀请已发送，等待对方明确接受成为房主和庄家。');};row.append(name,button);members.append(row);}
  }
  function sync(){if(!api)return;const active=room()&&room().role!=='solo',banker=room()?.currentBanker;
-  $('bankerEntry').hidden=!active;$('bankerEntry').textContent=room()?.hostInvitation?'收到房主邀请 · 接受/拒绝':host()?'庄家 / 房主 · 邀请换人':'申请庄家 · 接任房主';
+  $('roomBankerQuick').hidden=!active;$('bankerEntry').hidden=!active;$('bankerEntry').textContent=room()?.hostInvitation?'收到房主邀请 · 接受/拒绝':host()?'⇄ 更换庄家':'申请成为庄家';
+  $('roomBankerCurrent').textContent='当前庄家：'+(banker?.name||'房主');
+  $('roomBankerHint').textContent=room()?.hostInvitation?'点上方按钮，接受或拒绝这次邀请':host()?'选择在线成员，邀请接任房主和报价':'提交接任申请，由当前房主确认';
+  $('bankerHelp').textContent=host()?'选择在线成员邀请接任，对方接受后交接房主和报价权限。':'接任后你将成为房主和庄家，负责报价及房间管理。若你原来开箱，原房主会接替开箱；同一人不兼任开箱与报价。';
   $('bankerCurrent').textContent=banker?'当前庄家：'+banker.name+(banker.host?'（房主）':'（仅报价）'):'当前庄家：房主';
   $('requestBanker').hidden=host()||!!room()?.hostInvitation;$('requestBanker').disabled=busy||room()?.canRequestBanker!==true||room()?.connected===false||room()?.handoffPending;$('requestBanker').textContent=room()?.role==='player'?'申请换边并接任房主':'申请成为庄家并接任房主';
   $('reclaimBanker').hidden=!host()||banker?.host!==false;$('reclaimBanker').disabled=busy||room()?.connected===false;
@@ -34,8 +37,11 @@
   if(!host()&&room()?.hostInvitation&&dismissedInvite!==room().hostInvitation.id&&!$('bankerDialog').open)open();
  }
  window.BankerPanel={init(options){if(api)return;api=options;
-  const entry=document.createElement('button');entry.id='bankerEntry';entry.type='button';entry.className='banker-entry';entry.textContent='庄家 · 申请 / 查看';($('roomActions')||$('roomPanel')).append(entry);
-  document.body.insertAdjacentHTML('beforeend','<dialog id="bankerDialog" class="banker-dialog" aria-labelledby="bankerTitle"><button id="closeBanker" class="banker-close" type="button" aria-label="关闭庄家面板">×</button><span class="eyebrow">THE QUOTE DESK</span><h2 id="bankerTitle">庄家 · 接任房主</h2><p id="bankerCurrent"></p><p>接任后你将成为房主和庄家，负责报价及房间管理。若你原来开箱，原房主会接替开箱；同一人不兼任开箱与报价。</p><button id="requestBanker" class="enamel" type="button">申请成为庄家并接任房主</button><button id="reclaimBanker" class="secondary" type="button" hidden>房主收回报价权</button><section id="bankerInvitation" hidden><p>房主邀请你成为庄家并接任房主。仅在资料安全保存、双方确认后才正式换位。</p><button id="acceptHostInvitation" class="enamel" type="button">接受 · 成为房主和庄家</button><button id="declineHostInvitation" class="secondary" type="button">拒绝 · 保持当前身份</button></section><h3 id="bankerMemberHeading">在线成员 · 直接邀请</h3><div id="bankerMembersList"></div><h3 id="bankerReviewHeading">待审批申请</h3><div id="bankerRequestsList"></div><p id="bankerStatus" role="status" aria-live="polite"></p></dialog>');
+  const entry=document.createElement('button');entry.id='bankerEntry';entry.type='button';entry.className='banker-entry';entry.textContent='更换庄家';entry.setAttribute('aria-haspopup','dialog');
+  const quick=document.createElement('section');quick.id='roomBankerQuick';quick.className='room-banker-quick';quick.hidden=true;
+  const current=document.createElement('p');current.id='roomBankerCurrent';const hint=document.createElement('p');hint.id='roomBankerHint';quick.append(current,entry,hint);
+  const panel=$('roomPanel'),anchor=$('roomMembers')||$('roomIntro');if(panel?.insertBefore&&anchor?.parentNode===panel)panel.insertBefore(quick,anchor);else ($('roomActions')||panel).append(quick);
+  document.body.insertAdjacentHTML('beforeend','<dialog id="bankerDialog" class="banker-dialog" aria-labelledby="bankerTitle"><button id="closeBanker" class="banker-close" type="button" aria-label="关闭庄家面板">×</button><span class="eyebrow">THE QUOTE DESK</span><h2 id="bankerTitle">庄家 · 接任房主</h2><p id="bankerCurrent"></p><p id="bankerHelp">选择在线成员邀请接任，对方接受后交接房主和报价权限。</p><button id="requestBanker" class="enamel" type="button">申请成为庄家并接任房主</button><button id="reclaimBanker" class="secondary" type="button" hidden>房主收回报价权</button><section id="bankerInvitation" hidden><p>房主邀请你成为庄家并接任房主。仅在资料安全保存、双方确认后才正式换位。</p><button id="acceptHostInvitation" class="enamel" type="button">接受 · 成为房主和庄家</button><button id="declineHostInvitation" class="secondary" type="button">拒绝 · 保持当前身份</button></section><h3 id="bankerMemberHeading">在线成员 · 直接邀请</h3><div id="bankerMembersList"></div><h3 id="bankerReviewHeading">待审批申请</h3><div id="bankerRequestsList"></div><p id="bankerStatus" role="status" aria-live="polite"></p></dialog>');
   $('bankerEntry').onclick=open;$('closeBanker').onclick=close;$('bankerDialog').oncancel=e=>{e.preventDefault();close();};
   $('requestBanker').onclick=()=>{if(host()||room()?.canRequestBanker!==true)return;return invoke(()=>room().requestBanker(),'庄家申请已发送，等待房主同意。');};
   $('reclaimBanker').onclick=()=>{if(!host())return;return invoke(()=>room().reclaimBanker(),'房主已收回报价权。');};

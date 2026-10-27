@@ -1,4 +1,10 @@
 .banker-entry{min-height:44px;padding:9px 15px;border:1px solid #a69356;border-radius:9px;background:#f9ecc7;color:#34543b;font:700 14px/1.6 'Microsoft YaHei',sans-serif;cursor:pointer}
+#roomPanel #roomBankerQuick{box-sizing:border-box;margin:14px 0 16px;padding:13px;border:2px solid #9c8244;border-radius:13px;background:linear-gradient(135deg,#244e37,#173e2b);box-shadow:0 3px 0 #9f874555,inset 0 1px #b3c18b33}
+#roomPanel #roomBankerQuick[hidden]{display:none}
+#roomPanel #roomBankerCurrent{margin:0 0 10px;color:#f7e8b9;font-size:14px;font-weight:700;line-height:1.5;overflow-wrap:anywhere}
+#roomPanel #bankerEntry{box-sizing:border-box;width:100%;min-width:0;min-height:64px;margin:0;padding:14px 16px;border:1px solid #ffedb0;border-radius:10px;background:linear-gradient(145deg,#ffe9a4,#dbb660);box-shadow:0 3px 0 #977535,inset 0 2px #fff6d3;color:#284c33;font:800 21px/1.4 'Microsoft YaHei',sans-serif;letter-spacing:1px;white-space:normal}
+#roomPanel #roomBankerHint{margin:10px 0 0;color:#dedfb6;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+#bankerMembersList .banker-request>button{min-height:50px;min-width:130px;padding:12px 16px;border:1px solid #527844;border-radius:9px;background:linear-gradient(145deg,#62834a,#315e3c);box-shadow:0 3px 0 #244a30,inset 0 1px #a8bd7b;color:#fff1c7;font:700 16px/1.5 'Microsoft YaHei',sans-serif;cursor:pointer}
 .banker-dialog{width:min(580px,calc(100vw - 36px));max-height:82dvh;box-sizing:border-box;overflow:auto;border:1px solid #a69356;border-radius:16px;padding:28px;background:#fff9e9;color:#264531;box-shadow:0 20px 80px #10291d55}
 .banker-dialog::backdrop{background:#10291d9c;backdrop-filter:blur(4px)}
 .banker-close{position:absolute;right:12px;top:10px;width:44px;height:44px;border:0;border-radius:50%;background:transparent;font-size:28px;color:#34543b;cursor:pointer}
