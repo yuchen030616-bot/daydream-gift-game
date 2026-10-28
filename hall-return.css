@@ -1,0 +1,4 @@
+.dream-hall-return{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-height:44px;padding:0 13px;border:1px solid #b9aa6866;border-radius:10px;background:#183e2f;color:#f3e9c2;text-decoration:none;font:700 13px/1.4 'Microsoft YaHei',sans-serif;white-space:nowrap}
+.dream-hall-return:hover{background:#2e5740}.dream-hall-return:focus-visible{outline:3px solid #dbc47a;outline-offset:3px}
+@media(max-width:700px){body.mobile-paged .topbar .brand{display:none}body.mobile-paged .topbar .dream-hall-return{min-height:44px;padding:0 9px;font-size:12px}body.mobile-paged .topbar #mobilePageTitle{font-size:15px;letter-spacing:0}}
+@media(max-width:350px){body.mobile-paged .topbar{gap:6px}body.mobile-paged .topbar .dream-hall-return{padding:0 7px;font-size:11px}body.mobile-paged .topbar #mobilePageTitle{font-size:13px}}
