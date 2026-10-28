@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#143b31">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="和朋友来一局21点。手机开房、实时对战，也可以围观或先与熊二练习。">
+  <title>21点对战 · 熊二游戏俱乐部</title>
+  <link rel="stylesheet" href="blackjack.css?v=20261028-blackjack">
+</head>
+<body data-bj-screen="entry">
+  <header class="bj-topbar">
+    <a href="./" class="bj-brand" aria-label="返回游戏大厅"><span class="bj-brand-mark" aria-hidden="true">♠</span><span>21点对战<small>BEAR’S CARD CLUB</small></span></a>
+    <button id="bjRules" class="bj-icon-button" type="button" aria-haspopup="dialog">玩法 <span aria-hidden="true">?</span></button>
+  </header>
+
+  <main class="bj-shell">
+    <section id="bjEntry" class="bj-entry" aria-labelledby="bjEntryTitle">
+      <div class="bj-entry-copy"><span class="bj-kicker">ONE MORE CARD?</span><h1 id="bjEntryTitle">敢再来一张吗？<em>21点，刚刚好。</em></h1><p>1位庄家，4个玩家席。<br>朋友没到齐？一人也能兼几家。</p></div>
+      <div class="bj-card-fan" aria-hidden="true"><span class="bj-fan-card bj-fan-back">✦</span><span class="bj-fan-card bj-fan-ten"><b>K<span>♠</span></b><i>♠</i></span><span class="bj-fan-card bj-fan-ace"><b>A<span>♥</span></b><i>♥</i></span><span class="bj-fan-label">THE PERFECT 21</span></div>
+      <div class="bj-entry-form">
+        <label class="bj-field" for="bjName"><span>先留个牌桌昵称</span><input id="bjName" name="nickname" type="text" maxlength="16" autocomplete="nickname" placeholder="大家怎么称呼你？" enterkeyhint="done"></label>
+        <p id="bjInviteNotice" class="bj-invite-notice" hidden>朋友已经为你留好位置，确认昵称就能入场。</p>
+        <button id="bjAcceptInvite" class="bj-button bj-primary" type="button" hidden>确认昵称 · 进入邀请房间 <span aria-hidden="true">↗</span></button>
+        <div id="bjEntryChoices" class="bj-entry-choices">
+          <button id="bjCreate" class="bj-button bj-primary" type="button">创建对战房间 <span aria-hidden="true">↗</span></button>
+          <button id="bjSolo" class="bj-button bj-outline" type="button">先和熊二练一局 <span aria-hidden="true">♠</span></button>
+          <div class="bj-join-row"><label class="bj-field" for="bjJoinCode"><span>朋友已有房间？</span><input id="bjJoinCode" type="text" maxlength="4" inputmode="numeric" pattern="[0-9]{4}" autocomplete="off" placeholder="4位房间码" aria-label="4位数字房间码"></label><button id="bjJoin" class="bj-button bj-small" type="button">加入 <span aria-hidden="true">→</span></button></div>
+        </div>
+        <p id="bjEntryStatus" class="bj-status" role="status" aria-live="polite"></p>
+        <p class="bj-entry-foot">无需注册 <span>·</span> 手机开玩 <span>·</span> 好友可围观</p>
+      </div>
+    </section>
+
+    <section id="bjRoom" class="bj-room" hidden aria-labelledby="bjRoomTitle">
+      <div class="bj-page-heading"><div><span class="bj-kicker">YOUR PRIVATE TABLE</span><h1 id="bjRoomTitle">牌桌准备好了。</h1></div><span id="bjConnection" class="bj-connection">连接中</span></div>
+      <div id="bjRoomCodeCard" class="bj-room-code"><div><span>房间码</span><strong id="bjCode">— — — —</strong><small>让朋友输入房间码，或直接发邀请</small></div><span class="bj-room-suit" aria-hidden="true">♠</span></div>
+      <div class="bj-room-identity"><span id="bjMyName"></span><strong id="bjMyRole"></strong></div>
+      <div id="bjShareGrid" class="bj-share-grid"><button id="bjCopyPlayer" class="bj-button bj-primary" type="button">邀请玩家 <span aria-hidden="true">↗</span></button><button id="bjCopyWatch" class="bj-button bj-outline" type="button">邀请围观 <span aria-hidden="true">↗</span></button></div>
+      <button id="bjStart" class="bj-button bj-primary bj-start" type="button">发牌 · 开始第一局 <span aria-hidden="true">→</span></button>
+      <button id="bjEnterTable" class="bj-button bj-outline" type="button" hidden>回到牌桌 <span aria-hidden="true">→</span></button>
+      <p id="bjRoomStatus" class="bj-status" role="status" aria-live="polite"></p>
+      <section id="bjSeatsSection" class="bj-room-seats" aria-labelledby="bjSeatsTitle"><div class="bj-section-heading"><h2 id="bjSeatsTitle">四个玩家席 · 选你的位置</h2><span id="bjSeatCount">0 / 4 席</span></div><p id="bjSeatHelp" class="bj-seat-help">一人可兼多家，每手独立要牌、停牌与计分。</p><div id="bjSeatGrid" class="bj-seat-grid"></div></section>
+      <details id="bjInviteLinks" class="bj-invite-links" hidden><summary>无法复制？长按网址分享 <span aria-hidden="true">⌄</span></summary><div class="bj-invite-link-fields"><label for="bjPlayerLink">玩家邀请 · 发给要牌的人<input id="bjPlayerLink" type="text" readonly aria-label="玩家邀请网址"></label><label for="bjWatchLink">围观邀请 · 可发给多位朋友<input id="bjWatchLink" type="text" readonly aria-label="围观邀请网址"></label><p>长按上方对应网址，即可复制分享。</p></div></details>
+      <section id="bjRoomMembers" class="bj-room-members" aria-labelledby="bjMembersTitle"><div class="bj-section-heading"><h2 id="bjMembersTitle">本桌成员</h2><span id="bjMemberCount">0 人</span></div><div id="bjMembers" class="bj-members"></div></section>
+      <div class="bj-room-rule"><span aria-hidden="true">♠</span><p>玩家先决定要牌或停牌。庄家按固定规则补牌，17点及以上必须停牌。</p></div>
+      <div class="bj-room-utilities"><button id="bjReconnect" type="button">重新连接</button><button id="bjLeaveRoom" type="button">离开房间</button></div>
+    </section>
+
+    <section id="bjGame" class="bj-game" hidden aria-label="21点对战牌桌">
+      <div class="bj-game-meta"><span id="bjRound">ROUND 01</span><span id="bjGameRole"></span><button id="bjOpenRoom" type="button">房间 <span aria-hidden="true">↗</span></button></div>
+      <div class="bj-table">
+        <section class="bj-hand bj-dealer" aria-labelledby="bjDealerName"><div class="bj-seat-heading"><div class="bj-seat-person"><span class="bj-avatar" aria-hidden="true">♠</span><div><span class="bj-seat-label">庄家</span><h2 id="bjDealerName">熊二</h2></div></div><div id="bjDealerScore" class="bj-hand-total">—<small>点数</small></div></div><div id="bjDealerCards" class="bj-hand-cards" aria-label="庄家手牌"></div><p id="bjDealerNote" class="bj-hand-note">庄家暗牌将在停牌后揭晓</p></section>
+        <div class="bj-table-center"><span aria-hidden="true">✦</span><p id="bjTurnText" role="status" aria-live="polite">牌已就位，等你入场</p><span aria-hidden="true">✦</span></div>
+        <div id="bjSeatTabs" class="bj-seat-tabs" role="tablist" aria-label="四个玩家席手牌"></div>
+        <section class="bj-hand bj-player" aria-labelledby="bjPlayerName"><div class="bj-seat-heading"><div class="bj-seat-person"><span class="bj-avatar bj-avatar-player" aria-hidden="true">♥</span><div><span id="bjPlayerSeatLabel" class="bj-seat-label">玩家</span><h2 id="bjPlayerName">你</h2></div></div><div id="bjPlayerScore" class="bj-hand-total">—<small>点数</small></div></div><div id="bjPlayerCards" class="bj-hand-cards" aria-label="玩家手牌"></div><p id="bjPlayerNote" class="bj-hand-note">靠近21，别越过它</p></section>
+        <span class="bj-table-watermark" aria-hidden="true">BLACKJACK</span>
+      </div>
+      <div class="bj-scoreboard" aria-label="本桌累计积分"><div><span id="bjDealerScoreName">庄家累计</span><strong id="bjDealerLedger">0</strong></div><span class="bj-score-divider">VS</span><div><span id="bjPlayerScoreName">玩家累计</span><strong id="bjPlayerLedger">0</strong></div></div>
+      <p id="bjGameStatus" class="bj-status" role="status" aria-live="polite"></p>
+      <div class="bj-table-actions"><button id="bjHit" class="bj-button bj-primary" type="button">要牌 <span aria-hidden="true">＋</span></button><button id="bjStand" class="bj-button bj-table-outline" type="button">停牌 <span aria-hidden="true">✓</span></button><button id="bjReturnActive" class="bj-button bj-primary is-full" type="button" hidden>回到我的行动席 →</button><button id="bjDealerStep" class="bj-button bj-primary" type="button" hidden>按规则补牌 <span aria-hidden="true">→</span></button><button id="bjGameStart" class="bj-button bj-primary" type="button" hidden>发牌 · 开始 <span aria-hidden="true">→</span></button><button id="bjNext" class="bj-button bj-primary" type="button" hidden>再来一局 <span aria-hidden="true">→</span></button><button id="bjViewResult" class="bj-button bj-table-outline" type="button" hidden>查看本局结果</button><p id="bjActionHint">每个决定，只需轻轻一点。</p></div>
+    </section>
+  </main>
+
+  <dialog id="bjRulesDialog" class="bj-dialog bj-rules-dialog" aria-labelledby="bjRulesTitle"><button id="bjCloseRules" class="bj-dialog-close" type="button" aria-label="关闭玩法">×</button><span class="bj-kicker">KNOW YOUR CARDS</span><h2 id="bjRulesTitle">21点，怎么玩？</h2><p class="bj-rule-note">本桌1位庄家、4个玩家席。人少可一人兼几家，四手依次行动、各自与庄家比较；开局后本局席位锁定。</p><ol class="bj-rule-list"><li><b>靠近21点，但不能超过。</b><span>2–10按牌面计分，J、Q、K都是10点，A自动按1或11点计算。</span></li><li><b>玩家先选「要牌」或「停牌」。</b><span>超过21点立即爆牌；停牌后揭开庄家暗牌，庄家开始行动。</span></li><li><b>庄家按规则行动。</b><span>16点及以下必须补牌，17点及以上停牌，含A+6的软17。</span></li><li><b>天然21点优先。</b><span>起手两张A加10点牌叫天然21点，胜过多张组成的21点；同点或双方天然21点平局。</span></li><li><b>只比娱乐积分。</b><span>普通胜负±2分，天然21点胜负±3分，平局0分。每局重洗一副52张牌。</span></li></ol><p class="bj-rule-note">这是轻量对战版，暂不设分牌、加倍和保险。积分不涉及真实支付。</p><a class="bj-rule-source" href="https://bicyclecards.com/how-to-play/blackjack/" target="_blank" rel="noopener noreferrer">规则参考 · Bicycle ↗</a><button id="bjGotRules" class="bj-button bj-primary" type="button">知道了，回到牌桌</button></dialog>
+
+  <dialog id="bjResultDialog" class="bj-dialog bj-result-dialog" aria-labelledby="bjResultTitle"><button id="bjCloseResult" class="bj-dialog-close" type="button" aria-label="关闭本局结果">×</button><span class="bj-result-symbol" aria-hidden="true">♠</span><span id="bjResultRound" class="bj-kicker">ROUND 01 · FINISHED</span><h2 id="bjResultTitle">这一局，漂亮。</h2><p id="bjResultReason"></p><div class="bj-result-hands"><div><span id="bjResultDealerName">庄家</span><strong id="bjResultDealerScore">—</strong><small id="bjResultDealerDelta">0 分</small></div><span>VS</span><div><span id="bjResultPlayerName">玩家</span><strong id="bjResultPlayerScore">—</strong><small id="bjResultPlayerDelta">0 分</small></div></div><div id="bjResultHands" class="bj-result-seat-list" hidden></div><button id="bjResultNext" class="bj-button bj-primary" type="button">再来一局 <span aria-hidden="true">→</span></button><button id="bjResultBack" class="bj-button bj-outline" type="button">看看牌桌</button><button id="bjResultSeats" class="bj-result-seats" type="button">调整下局席位 →</button><p id="bjResultWait" class="bj-result-wait" hidden>等待房主开始下一局</p></dialog>
+
+  <noscript><p class="bj-noscript">开启浏览器的 JavaScript 后，即可加入21点对战。</p></noscript>
+  <script src="vendor/mqtt.min.js"></script>
+  <script src="room-core.js?v=20261028-club"></script>
+  <script src="room-directory.js?v=20261027-hostfix"></script>
+  <script src="blackjack-core.js?v=20261028-blackjack"></script>
+  <script src="blackjack-table.js?v=20261028-blackjack"></script>
+  <script src="blackjack-ui.js?v=20261028-blackjack"></script>
+  <script src="blackjack-room.js?v=20261028-blackjack"></script>
+</body>
+</html>

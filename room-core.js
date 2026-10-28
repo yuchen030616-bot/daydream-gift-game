@@ -34,7 +34,7 @@
           if(await fingerprint(cert.pub)!==previousCode)return null;
           const d=await verifySigned(cert,cert.pub);
           if(!d||Object.keys(d).sort().join(',')!=='actorPeer,at,code,fromKeyCode,fromPub,kind,seq,toKeyCode,toPub,transferId'||d.kind!==hostKind||d.code!==rootCode||d.fromPub!==cert.pub||d.fromKeyCode!==previousCode||d.seq!==seq+1||!Number.isSafeInteger(d.at)||d.at<=0||!safePeer(d.actorPeer)||typeof d.transferId!=='string'||!/^[A-Za-z0-9_-]{16,64}$/.test(d.transferId)||typeof d.toPub!=='string'||d.toPub.length>150||!valid(d.toKeyCode)||await fingerprint(d.toPub)!==d.toKeyCode||d.toPub===cert.pub)return null;
-          previousPub=d.toPub;previousCode=d.toKeyCode;seq=d.seq;prefixIds.push(await digest(JSON.stringify([cert.pub,cert.keyCode,cert.data,cert.sig])));
+          previousPub=d.toPub;previousCode=d.toKeyCode;seq=d.seq;prefixIds.push(await digest(JSON.stringify([cert.pub,cert.keyCode,cert.data,b64(bytes(cert.sig))])));
         }
         if(previousPub!==pub||previousCode!==keyCode)return null;
         return {pub,keyCode,seq,chainId:prefixIds.at(-1),prefixIds};
