@@ -7,10 +7,11 @@
   <meta name="referrer" content="no-referrer">
   <meta name="description" content="和朋友来一局21点。手机开房、实时对战，也可以围观或先与熊二练习。">
   <title>21点对战 · 熊二游戏俱乐部</title>
-  <link rel="stylesheet" href="blackjack.css?v=20261030-infinite">
-  <link rel="stylesheet" href="blackjack-casino.css?v=20261030-infinite">
-  <link rel="stylesheet" href="blackjack-table-art.css?v=20261030-infinite">
-  <link rel="stylesheet" href="blackjack-cards.css?v=20261030-infinite">
+  <link rel="stylesheet" href="blackjack.css?v=20261030-room">
+  <link rel="stylesheet" href="blackjack-casino.css?v=20261030-room">
+  <link rel="stylesheet" href="blackjack-table-art.css?v=20261030-room">
+  <link rel="stylesheet" href="blackjack-cards.css?v=20261030-room">
+  <link rel="stylesheet" href="blackjack-lobby.css?v=20261030-room">
 </head>
 <body class="bj-casino" data-bj-screen="entry">
   <header class="bj-topbar">
@@ -38,22 +39,19 @@
       </div>
     </section>
 
-    <section id="bjRoom" class="bj-room" hidden aria-labelledby="bjRoomTitle">
-      <div class="bj-page-heading"><div><span class="bj-kicker">YOUR PRIVATE TABLE</span><h1 id="bjRoomTitle">牌桌准备好了。</h1></div><span id="bjConnection" class="bj-connection">连接中</span></div>
-      <section id="bjDealerQuick" class="bj-dealer-quick" aria-label="更换庄家" hidden><p id="bjCurrentDealer">当前庄家：等待同步</p><button id="bjChangeDealer" type="button" aria-haspopup="dialog">⇄ 更换庄家</button><p id="bjDealerQuickHint">每局结束后，可邀请房间成员接任。</p></section>
-      <div id="bjRoomCodeCard" class="bj-room-code"><div><span>房间码</span><strong id="bjCode">— — — —</strong><small>让朋友输入房间码，或直接发邀请</small></div><span class="bj-room-suit" aria-hidden="true">♠</span></div>
-      <div class="bj-room-identity"><span id="bjMyName"></span><strong id="bjMyRole"></strong></div>
-      <section id="bjChipWallet" class="bj-chip-wallet" aria-label="我的虚拟筹码" hidden><div class="bj-chip-wallet-main"><span>我的筹码余额</span><strong id="bjChipBalance">1,000</strong><small id="bjChipAvailable">可用 1,000 · 占用 0</small></div><div class="bj-chip-wallet-side"><span id="bjChipBuyInTotal">累计带入 1,000</span><button id="bjOpenBuyIn" type="button" aria-haspopup="dialog">设置带入</button></div></section>
-      <div id="bjShareGrid" class="bj-share-grid"><button id="bjCopyPlayer" class="bj-button bj-primary" type="button">邀请玩家 <span aria-hidden="true">↗</span></button><button id="bjCopyWatch" class="bj-button bj-outline" type="button">邀请围观 <span aria-hidden="true">↗</span></button></div>
-      <button id="bjStart" class="bj-button bj-primary bj-start" type="button">发牌 · 开始第一局 <span aria-hidden="true">→</span></button>
-      <button id="bjEnterTable" class="bj-button bj-outline" type="button" hidden>回到牌桌 <span aria-hidden="true">→</span></button>
-      <p id="bjRoomStatus" class="bj-status" role="status" aria-live="polite"></p>
-      <section id="bjSeatsSection" class="bj-room-seats" aria-labelledby="bjSeatsTitle"><div class="bj-section-heading"><h2 id="bjSeatsTitle">四个玩家席 · 选你的位置</h2><span id="bjSeatCount">0 / 4 席</span></div><p id="bjSeatHelp" class="bj-seat-help">一人可兼多家，每手独立要牌、停牌与计分。</p><div id="bjSeatGrid" class="bj-seat-grid"></div></section>
-      <details id="bjInviteLinks" class="bj-invite-links" hidden><summary>无法复制？长按网址分享 <span aria-hidden="true">⌄</span></summary><div class="bj-invite-link-fields"><label for="bjPlayerLink">玩家邀请 · 发给要牌的人<input id="bjPlayerLink" type="text" readonly aria-label="玩家邀请网址"></label><label for="bjWatchLink">围观邀请 · 可发给多位朋友<input id="bjWatchLink" type="text" readonly aria-label="围观邀请网址"></label><p>长按上方对应网址，即可复制分享。</p></div></details>
-      <section id="bjRoomMembers" class="bj-room-members" aria-labelledby="bjMembersTitle"><div class="bj-section-heading"><h2 id="bjMembersTitle">本桌成员</h2><span id="bjMemberCount">0 人</span></div><div id="bjMembers" class="bj-members"></div></section>
-      <div class="bj-room-rule"><span aria-hidden="true">♠</span><p>玩家先决定要牌或停牌。庄家按固定规则补牌，17点及以上必须停牌。</p></div>
-      <section id="bjRecentRoom" class="bj-recent-rooms" aria-labelledby="bjRecentRoomTitle" hidden><div class="bj-section-heading"><h2 id="bjRecentRoomTitle">最近的牌桌</h2><span>本机记录</span></div><div id="bjRecentRoomList"></div></section>
-      <div class="bj-room-utilities"><button id="bjReconnect" type="button">重新连接</button><button id="bjLeaveRoom" type="button">离开房间</button></div>
+    <section id="bjRoom" class="bj-room bj-lobby" hidden aria-labelledby="bjRoomTitle">
+      <div class="bj-lobby-header">
+        <div class="bj-lobby-heading-copy"><div class="bj-lobby-title-line"><h1 id="bjRoomTitle">好友牌桌</h1><span id="bjConnection" class="bj-connection">连接中</span></div><div class="bj-room-identity"><span id="bjMyName"></span><strong id="bjMyRole"></strong></div></div>
+        <button id="bjRoomCodeCard" class="bj-room-code" type="button" aria-label="复制4位房间码"><span>房间码</span><strong id="bjCode">— — — —</strong><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h11v13H8zM5 16H3V3h11v2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>
+      </div>
+      <section id="bjDealerQuick" class="bj-dealer-quick" aria-label="当前庄家" hidden><span class="bj-lobby-dealer-mark" aria-hidden="true">♠</span><div class="bj-lobby-dealer-person"><small>本桌庄家</small><p id="bjCurrentDealer">等待同步</p><p id="bjDealerQuickHint">邀请朋友，准备开局</p></div><button id="bjChangeDealer" type="button" aria-haspopup="dialog">更换庄家</button></section>
+      <section id="bjChipWallet" class="bj-chip-wallet" aria-label="我的虚拟筹码" hidden><div class="bj-chip-wallet-main"><span>我的筹码</span><strong id="bjChipBalance">1,000</strong><small id="bjChipAvailable">可用 1,000 · 占用 0</small></div><div class="bj-chip-wallet-side"><span id="bjChipBuyInTotal">累计带入 1,000</span><button id="bjOpenBuyIn" type="button" aria-haspopup="dialog">设置带入</button></div></section>
+      <section id="bjSeatsSection" class="bj-room-seats" aria-labelledby="bjSeatsTitle"><div class="bj-section-heading"><h2 id="bjSeatsTitle">玩家席位</h2><span id="bjSeatCount">0 / 4 席</span></div><p id="bjSeatHelp" class="bj-seat-help">可同时入座多个席位，共用筹码余额</p><div id="bjSeatGrid" class="bj-seat-grid"></div></section>
+      <div class="bj-lobby-footer">
+        <nav class="bj-lobby-shortcuts" aria-label="房间分区"><button id="bjLobbyInvite" type="button" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 18-8-8 18-2-8zM11 13 21 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg><span>邀请朋友</span></button><button id="bjLobbyMembers" type="button" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 21v-2a5 5 0 0 0-10 0v2M17 14a4 4 0 0 1 4 4v3" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="10" cy="7" r="4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M17 3a4 4 0 0 1 0 8" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span id="bjLobbyMembersLabel">本桌成员</span><small id="bjLobbyMemberCount"></small></button><button id="bjLobbyRecents" type="button" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11a9 9 0 1 1 2.6 7M3 4v7h7M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>历史房间</span></button></nav>
+        <p id="bjRoomStatus" class="bj-status" role="status" aria-live="polite"></p>
+        <div class="bj-lobby-primary-actions"><button id="bjStart" class="bj-button bj-primary bj-start" type="button">发牌 · 开始第一局</button><button id="bjEnterTable" class="bj-button bj-primary" type="button" hidden>进入下注牌桌</button></div>
+      </div>
     </section>
 
     <section id="bjGame" class="bj-game" hidden aria-label="21点对战牌桌">
@@ -91,10 +89,16 @@
  <label class="bj-insurance-amount" for="bjInsuranceAmount">保险筹码<input id="bjInsuranceAmount" type="number" min="0" step="0.5" inputmode="decimal" value="0"></label>
  <div class="bj-insurance-buttons"><button id="bjBuyInsurance" class="bj-button bj-double" type="button">买保险</button><button id="bjDeclineInsurance" class="bj-button bj-table-outline" type="button">不买</button><button id="bjEvenMoney" class="bj-button bj-primary" type="button" hidden>Even Money</button></div>
  <p id="bjInsuranceStatus" class="bj-stage-note" role="status" aria-live="polite"></p>
-</section><button id="bjHit" class="bj-button bj-primary" type="button">要牌 <span aria-hidden="true">＋</span></button><button id="bjStand" class="bj-button bj-table-outline" type="button">停牌 <span aria-hidden="true">✓</span></button><button id="bjDouble" class="bj-button bj-table-outline bj-double" type="button" hidden>Double <span aria-hidden="true">×2</span></button><button id="bjSplit" class="bj-button bj-table-outline bj-split" type="button" hidden>分牌 <span aria-hidden="true">Ⅱ</span></button><button id="bjSurrender" class="bj-button bj-table-outline bj-surrender" type="button" hidden>投降 <span aria-hidden="true">½</span></button><button id="bjReturnActive" class="bj-button bj-primary is-full" type="button" hidden>回到我的行动席 →</button><button id="bjDealerStep" class="bj-button bj-primary" type="button" hidden>按规则补牌 <span aria-hidden="true">→</span></button><button id="bjGameStart" class="bj-button bj-primary" type="button" hidden>发牌 · 开始 <span aria-hidden="true">→</span></button><button id="bjNext" class="bj-button bj-primary" type="button" hidden>再来一局 <span aria-hidden="true">→</span></button><button id="bjViewResult" class="bj-button bj-table-outline" type="button" hidden>查看本局结果</button><p id="bjActionHint">每个决定，只需轻轻一点。</p></div>
+</section><button id="bjHit" class="bj-button bj-primary" type="button">要牌 <span aria-hidden="true">＋</span></button><button id="bjStand" class="bj-button bj-table-outline" type="button">停牌 <span aria-hidden="true">✓</span></button><button id="bjDouble" class="bj-button bj-table-outline bj-double" type="button" hidden>Double <span aria-hidden="true">×2</span></button><button id="bjSplit" class="bj-button bj-table-outline bj-split" type="button" hidden>分牌 <span aria-hidden="true">Ⅱ</span></button><button id="bjSurrender" class="bj-button bj-table-outline bj-surrender" type="button" hidden>投降 <span aria-hidden="true">½</span></button><button id="bjResumeSqueeze" class="bj-button bj-primary is-full" type="button" hidden>继续咪牌</button><button id="bjReturnActive" class="bj-button bj-primary is-full" type="button" hidden>回到我的行动席 →</button><button id="bjDealerStep" class="bj-button bj-primary" type="button" hidden>按规则补牌 <span aria-hidden="true">→</span></button><button id="bjGameStart" class="bj-button bj-primary" type="button" hidden>发牌 · 开始 <span aria-hidden="true">→</span></button><button id="bjNext" class="bj-button bj-primary" type="button" hidden>再来一局 <span aria-hidden="true">→</span></button><button id="bjViewResult" class="bj-button bj-table-outline" type="button" hidden>查看本局结果</button><p id="bjActionHint">每个决定，只需轻轻一点。</p></div>
     </section>
   </main>
 
+  <dialog id="bjLobbySheet" class="bj-dialog bj-lobby-sheet" aria-labelledby="bjLobbySheetTitle"><div class="bj-lobby-sheet-head"><button id="bjCloseLobbySheet" class="bj-dialog-close" type="button" aria-label="关闭房间分区">×</button><div class="bj-lobby-sheet-handle" aria-hidden="true"></div><h2 id="bjLobbySheetTitle">邀请朋友</h2></div>
+    <section id="bjLobbyInvitePanel"><p class="bj-lobby-sheet-intro">把房间码或邀请发给朋友，一起坐上这张牌桌。</p><button id="bjLobbyCopyCode" class="bj-lobby-sheet-code" type="button"><span>复制房间码</span><strong id="bjLobbyCodeValue">— — — —</strong><span aria-hidden="true">↗</span></button><div id="bjShareGrid" class="bj-share-grid"><button id="bjCopyPlayer" class="bj-button bj-primary" type="button">邀请玩家 <span aria-hidden="true">↗</span></button><button id="bjCopyWatch" class="bj-button bj-outline" type="button">邀请围观 <span aria-hidden="true">↗</span></button></div><details id="bjInviteLinks" class="bj-invite-links" open hidden><summary>邀请网址 · 可长按复制</summary><div class="bj-invite-link-fields"><label for="bjPlayerLink">玩家邀请<input id="bjPlayerLink" type="text" readonly aria-label="玩家邀请网址"></label><label for="bjWatchLink">围观邀请<input id="bjWatchLink" type="text" readonly aria-label="围观邀请网址"></label><p>玩家可选择空席；围观者也可申请入座。</p></div></details></section>
+    <section id="bjLobbyMembersPanel" hidden><p id="bjLobbySoloInfo" class="bj-lobby-sheet-intro" hidden>熊二按固定规则担任庄家。你可以同时入座多个席位，每手独立行动，共用自己的筹码余额。</p><section id="bjRoomMembers" class="bj-room-members" aria-labelledby="bjMembersTitle"><div class="bj-section-heading"><h2 id="bjMembersTitle">本桌成员</h2><span id="bjMemberCount">0 人</span></div><div id="bjMembers" class="bj-members"></div></section><div class="bj-room-rule"><span aria-hidden="true">♠</span><p>无限牌靴 · 天然21赔3:2 · 庄家软17停牌</p></div><button id="bjLobbyRules" class="bj-button bj-outline" type="button">查看完整玩法 <span aria-hidden="true">↗</span></button></section>
+    <section id="bjLobbyRecentsPanel" hidden><section id="bjRecentRoom" class="bj-recent-rooms" aria-labelledby="bjRecentRoomTitle" hidden><div class="bj-section-heading"><h2 id="bjRecentRoomTitle">最近的牌桌</h2><span>本机记录</span></div><div id="bjRecentRoomList"></div></section><p id="bjLobbyRecentEmpty" class="bj-lobby-sheet-intro">本机还没有其他房间记录。加入过的牌桌会保留在这里，方便恢复身份。</p></section>
+    <p id="bjLobbySheetStatus" class="bj-status" role="status" aria-live="polite"></p><div class="bj-room-utilities"><button id="bjReconnect" type="button">重新连接</button><button id="bjLeaveRoom" type="button">离开房间</button></div>
+  </dialog>
   <dialog id="bjHistoryDialog" class="bj-dialog bj-history-dialog" aria-labelledby="bjHistoryTitle"><button id="bjCloseHistory" class="bj-dialog-close" type="button" aria-label="关闭上局手牌">×</button><span class="bj-kicker">PREVIOUS ROUND · READ ONLY</span><h2 id="bjHistoryTitle">上一局完整手牌</h2><p class="bj-history-help">仅查看已公开手牌与结算，不会更改本轮下注。</p><div id="bjHistoryContent"></div><button id="bjHistoryDone" class="bj-button bj-primary" type="button">返回下注牌桌</button></dialog>
   <dialog id="bjCodeDialog" class="bj-dialog bj-money-dialog" aria-labelledby="bjCodeDialogTitle"><button id="bjCloseCode" class="bj-dialog-close" type="button" aria-label="关闭房间码">×</button><span class="bj-kicker">YOUR TABLE CODE</span><h2 id="bjCodeDialogTitle">告诉朋友这个房间码</h2><label class="bj-field" for="bjCodeCopy"><span>长按下方4位数字即可复制</span><input id="bjCodeCopy" type="text" readonly inputmode="numeric" aria-label="可复制的4位房间码"></label><button id="bjCodeDone" class="bj-button bj-primary" type="button">知道了</button></dialog>
   <dialog id="bjChipSettingsDialog" class="bj-dialog bj-money-dialog" aria-labelledby="bjChipSettingsTitle"><button id="bjCloseChipSettings" class="bj-dialog-close" type="button" aria-label="关闭筹码面额设置">×</button><span class="bj-kicker">YOUR FIVE CHIPS</span><h2 id="bjChipSettingsTitle">设置常用5枚筹码</h2><p>填入5个不同的正整数。只保存本机常用面额，不会立即下注。</p><div id="bjChipValues" class="bj-chip-values"></div><p id="bjChipSettingsStatus" class="bj-status" role="status" aria-live="polite"></p><button id="bjSaveChipSettings" class="bj-button bj-primary" type="button">保存常用面额</button></dialog>
@@ -104,7 +108,7 @@
 
   <dialog id="bjSurrenderDialog" class="bj-dialog bj-money-dialog" aria-labelledby="bjSurrenderTitle"><button id="bjCloseSurrender" class="bj-dialog-close" type="button" aria-label="取消投降">×</button><span class="bj-kicker">CUT YOUR LOSSES?</span><h2 id="bjSurrenderTitle">这一手，要投降吗？</h2><p id="bjSurrenderCopy"></p><p id="bjSurrenderStatus" class="bj-status" role="status" aria-live="polite"></p><button id="bjConfirmSurrender" class="bj-button bj-primary" type="button">确定 · 亏半注投降</button><button id="bjCancelSurrender" class="bj-button bj-outline" type="button">继续这一手</button></dialog>
 
-  <dialog id="bjSqueezeDialog" class="bj-dialog bj-squeeze-dialog" aria-labelledby="bjSqueezeTitle"><button id="bjCloseSqueeze" class="bj-dialog-close" type="button" aria-label="跳过咪牌，全部翻开">×</button><span id="bjSqueezeCounter" class="bj-kicker">A LITTLE SUSPENSE</span><h2 id="bjSqueezeTitle">这一张，慢慢看。</h2><p id="bjSqueezeSeat"></p><div id="bjSqueezeStage" class="bj-squeeze-stage" role="group" aria-label="从任意角拖动牌背，逐渐揭开纸牌"><div id="bjSqueezeFace" class="bj-squeeze-face"></div><div id="bjSqueezeFold" class="bj-squeeze-fold" aria-hidden="true"></div><div id="bjSqueezeCover" class="bj-squeeze-cover"><span>✦</span><small>从任意角 · 斜向轻拖</small></div></div><p id="bjSqueezeHint">也可以直接点击翻开，不影响牌局规则。</p><button id="bjRevealSqueeze" class="bj-button bj-primary" type="button">翻开这张 →</button><div class="bj-squeeze-secondary"><button id="bjSkipSqueeze" type="button">全部翻开，回到牌桌</button><button id="bjDisableSqueeze" type="button">以后直接翻开</button></div></dialog>
+  <dialog id="bjSqueezeDialog" class="bj-dialog bj-squeeze-dialog" aria-labelledby="bjSqueezeTitle"><button id="bjCloseSqueeze" class="bj-dialog-close" type="button" aria-label="收起咪牌，保留未公开手牌">×</button><span id="bjSqueezeCounter" class="bj-kicker">A LITTLE SUSPENSE</span><h2 id="bjSqueezeTitle">这一张，慢慢看。</h2><p id="bjSqueezeSeat"></p><div id="bjSqueezeStage" class="bj-squeeze-stage" role="group" aria-label="从任意角拖动牌背，逐渐揭开纸牌"><div id="bjSqueezeFace" class="bj-squeeze-face"></div><div id="bjSqueezeFold" class="bj-squeeze-fold" aria-hidden="true"></div><div id="bjSqueezeCover" class="bj-squeeze-cover"><span>✦</span><small>从任意角 · 斜向轻拖</small></div></div><p id="bjSqueezeHint">也可以直接点击翻开，不影响牌局规则。</p><button id="bjRevealSqueeze" class="bj-button bj-primary" type="button">翻开这张 →</button><div class="bj-squeeze-secondary"><button id="bjSkipSqueeze" type="button">全部翻开，回到牌桌</button><button id="bjDisableSqueeze" type="button">以后直接翻开</button></div></dialog>
 
   <dialog id="bjDealerDialog" class="bj-dialog bj-dealer-dialog" aria-labelledby="bjDealerTitle"><button id="bjCloseDealer" class="bj-dialog-close" type="button" aria-label="关闭更换庄家">×</button><span class="bj-kicker">PASS THE DEAL</span><h2 id="bjDealerTitle">下一局，谁坐庄？</h2><p id="bjDealerDialogCurrent" class="bj-dealer-dialog-current"></p><p id="bjDealerHelp" class="bj-dealer-help">选择一位在线成员，邀请接任庄家和房主。</p><section id="bjDealerInvitation" hidden><p id="bjDealerInvitationCopy"></p><div class="bj-dealer-invitation-actions"><button id="bjAcceptDealer" class="bj-button bj-primary" type="button">接受 · 接任庄家与房主</button><button id="bjDeclineDealer" class="bj-button bj-outline" type="button">拒绝 · 保持当前身份</button></div></section><div id="bjDealerCandidates" class="bj-dealer-candidates"></div><p id="bjDealerStatus" class="bj-status" role="status" aria-live="polite"></p></dialog>
 
@@ -118,12 +122,12 @@
   <script src="vendor/mqtt.min.js"></script>
   <script src="room-core.js?v=20261028-club"></script>
   <script src="room-directory.js?v=20261027-hostfix"></script>
-  <script src="blackjack-core.js?v=20261030-infinite"></script>
-  <script src="blackjack-classic.js?v=20261030-infinite"></script>
-  <script src="blackjack-table.js?v=20261030-infinite"></script>
-  <script src="blackjack-cards.js?v=20261030-infinite"></script>
-  <script src="blackjack-ui.js?v=20261030-infinite"></script>
-  <script src="blackjack-recents.js?v=20261030-infinite"></script>
-  <script src="blackjack-room.js?v=20261030-infinite"></script>
+  <script src="blackjack-core.js?v=20261030-room"></script>
+  <script src="blackjack-classic.js?v=20261030-room"></script>
+  <script src="blackjack-table.js?v=20261030-room"></script>
+  <script src="blackjack-cards.js?v=20261030-room"></script>
+  <script src="blackjack-ui.js?v=20261030-room"></script>
+  <script src="blackjack-recents.js?v=20261030-room"></script>
+  <script src="blackjack-room.js?v=20261030-room"></script>
 </body>
 </html>
