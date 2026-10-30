@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1050" preserveAspectRatio="none" role="img" aria-label="原创木边皮革绿色毛毡21点牌桌">
+<defs>
+ <radialGradient id="wood" cx="48%" cy="28%" r="85%"><stop stop-color="#b16d36"/><stop offset=".3" stop-color="#73411f"/><stop offset=".62" stop-color="#9b5a2a"/><stop offset=".9" stop-color="#392316"/><stop offset="1" stop-color="#c08242"/></radialGradient>
+ <linearGradient id="front" x2="0" y2="1"><stop stop-color="#735033"/><stop offset=".25" stop-color="#38251a"/><stop offset=".75" stop-color="#1b1715"/><stop offset="1" stop-color="#0b0b0a"/></linearGradient>
+ <radialGradient id="leather" cx="48%" cy="23%" r="80%"><stop stop-color="#66503b"/><stop offset=".4" stop-color="#3c2f25"/><stop offset=".75" stop-color="#241e1b"/><stop offset="1" stop-color="#453628"/></radialGradient>
+ <radialGradient id="felt" cx="50%" cy="31%" r="75%"><stop stop-color="#257351"/><stop offset=".35" stop-color="#1a6242"/><stop offset=".7" stop-color="#0d4b33"/><stop offset="1" stop-color="#073621"/></radialGradient>
+ <linearGradient id="rim" x2="0" y2="1"><stop stop-color="#d8b278"/><stop offset=".25" stop-color="#6c4c2d"/><stop offset=".65" stop-color="#261b13"/><stop offset="1" stop-color="#c59a5e"/></linearGradient>
+ <linearGradient id="rack" x2="0" y2="1"><stop stop-color="#131514"/><stop offset=".35" stop-color="#30332d"/><stop offset="1" stop-color="#080b09"/></linearGradient>
+ <linearGradient id="shoe" x2="1" y2="1"><stop stop-color="#242b25"/><stop offset=".6" stop-color="#090d0b"/><stop offset="1" stop-color="#667067"/></linearGradient>
+ <linearGradient id="chipEdge" x2="0" y2="1"><stop stop-color="#fff7d5" stop-opacity=".45"/><stop offset=".4" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".6"/></linearGradient>
+ <pattern id="grain" width="130" height="35" patternUnits="userSpaceOnUse"><path d="M-10 7Q35 0 75 9T145 5M-10 16Q40 29 90 17T145 25M-10 31Q45 18 95 29T145 28" fill="none" stroke="#dfae72" stroke-width="1.4" opacity=".2"/></pattern>
+ <filter id="cloth"><feTurbulence type="fractalNoise" baseFrequency=".78" numOctaves="3" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope=".17"/></feComponentTransfer><feBlend in="SourceGraphic" mode="soft-light"/></filter>
+ <filter id="soft"><feGaussianBlur stdDeviation="13"/></filter>
+ <filter id="shadow"><feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#000" flood-opacity=".7"/></filter>
+ <clipPath id="woodClip"><ellipse cx="450" cy="491" rx="444" ry="475"/></clipPath>
+ <clipPath id="feltClip"><ellipse cx="450" cy="469" rx="394" ry="420"/></clipPath>
+ <path id="mainArc" d="M192 403 Q450 300 708 403"/>
+ <path id="insuranceArc" d="M251 421 Q450 354 649 421"/>
+</defs>
+<ellipse cx="450" cy="544" rx="430" ry="479" fill="#000" opacity=".65" filter="url(#soft)"/>
+<ellipse cx="450" cy="522" rx="444" ry="478" fill="url(#front)"/>
+<ellipse cx="450" cy="491" rx="444" ry="475" fill="url(#wood)" stroke="#221b15" stroke-width="5"/>
+<g clip-path="url(#woodClip)"><rect width="900" height="1000" fill="url(#grain)"/><path d="M-20 947Q450 1060 920 947M-20 927Q450 1040 920 927M-20 902Q450 1015 920 902" fill="none" stroke="#2e2017" stroke-width="3" opacity=".6"/></g>
+<ellipse cx="450" cy="480" rx="428" ry="457" fill="url(#rim)"/>
+<ellipse cx="450" cy="474" rx="419" ry="448" fill="url(#leather)" stroke="#100f0c" stroke-width="5"/>
+<ellipse cx="450" cy="474" rx="409" ry="437" fill="none" stroke="#9f8966" stroke-opacity=".44" stroke-width="1.5" stroke-dasharray="5 6"/>
+<ellipse cx="450" cy="469" rx="396" ry="422" fill="#d5b46e" opacity=".75"/>
+<ellipse cx="450" cy="469" rx="391" ry="417" fill="url(#felt)" stroke="#082d1c" stroke-width="5"/>
+<g clip-path="url(#feltClip)"><ellipse cx="450" cy="469" rx="391" ry="417" fill="url(#felt)" filter="url(#cloth)"/><ellipse cx="450" cy="480" rx="363" ry="386" fill="none" stroke="#b7c5a1" stroke-width="1" stroke-opacity=".16"/></g>
+<!-- Dealer's cash rack: original unbranded chips, a recessed tray and clear highlights. -->
+<g transform="translate(300 61)" filter="url(#shadow)"><path d="M12 0H287L303 52H0Z" fill="#0b100d" stroke="#857758" stroke-width="2"/><path d="M20 9H278L286 42H13Z" fill="url(#rack)" stroke="#455244" stroke-width="1"/>
+ <g stroke="#e9dfb8" stroke-width="2" stroke-dasharray="5 8"><path d="M32 17H65M31 22H66M30 27H67M29 32H68" stroke="#b25b42" stroke-width="5"/><path d="M84 17H117M83 22H118M82 27H119M81 32H120" stroke="#d4c798" stroke-width="5"/><path d="M136 17H169M135 22H170M134 27H171M133 32H172" stroke="#417b92" stroke-width="5"/><path d="M188 17H221M187 22H222M186 27H223M185 32H224" stroke="#788b56" stroke-width="5"/><path d="M240 17H273M239 22H274M238 27H275M237 32H276" stroke="#a76e8d" stroke-width="5"/></g>
+ <path d="M20 9H278" stroke="#a2aa8b" opacity=".35"/>
+</g>
+<!-- A side shoe and discard tray, drawn as solid table equipment. -->
+<g transform="translate(704 135) rotate(13)" filter="url(#shadow)"><path d="M0 4L75 0L91 97L12 110Z" fill="url(#shoe)" stroke="#747c6a" stroke-width="2"/><path d="M10 16L64 12L73 62L20 69Z" fill="#e5dfc9"/><path d="M15 19L68 15M16 24L69 20M17 29L70 25M18 34L71 30M19 39L72 35M20 44L73 40M21 49L74 45M22 54L75 50" stroke="#aba68e" stroke-width="1.5"/><path d="M17 67L74 59L80 88L22 98Z" fill="#152d22" stroke="#5b7558" stroke-width="1.5"/><path d="M2 5L12 110L22 98L10 16Z" fill="#a1aaa0" fill-opacity=".18"/><path d="M64 12L75 0L91 97L80 88Z" fill="#cad8ca" fill-opacity=".13"/></g>
+<g transform="translate(104 164) rotate(-12)" opacity=".85" filter="url(#shadow)"><path d="M0 0L64 7L69 78L4 70Z" fill="#11261c" stroke="#6f8469" stroke-width="2"/><path d="M7 10L57 15L59 63L10 58Z" fill="#d9d4c1"/><path d="M12 20L54 24M12 26L55 30M13 32L55 36M13 38L56 42M14 44L56 48M14 50L57 54" stroke="#8f967c" stroke-width="1"/></g>
+
+<g fill="none" stroke="#c8cfac" opacity=".19"><path d="M170 750Q450 950 730 750" stroke-width="2"/><path d="M175 759Q450 960 725 759" stroke-width="1"/></g>
+</svg>

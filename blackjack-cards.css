@@ -1,0 +1,38 @@
+@charset "UTF-8";
+/* The table owns card dimensions. This layer only supplies the printed artwork. */
+.bj-card.bj-illustrated-card {
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: #fdfaf0;
+  isolation: isolate;
+}
+.bj-card.bj-illustrated-card.is-hidden {
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: #fdfaf0;
+}
+.bj-card.bj-illustrated-card > .bj-card-art {
+  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.bj-squeeze-face > .bj-card.bj-illustrated-card {
+  padding: 0;
+  border: 0;
+}
+@media (forced-colors: active) {
+  .bj-card.bj-illustrated-card,
+  .bj-card.bj-illustrated-card > .bj-card-art {
+    forced-color-adjust: none;
+  }
+}
